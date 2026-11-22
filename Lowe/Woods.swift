@@ -253,6 +253,9 @@ final class Woods {
     }
 
     /// Den nærmeste stokken på bakken innen `reach` meter.
+    /// Stokkene som ligger i snøen og kan bæres.
+    var allLooseLogs: [Entity] { looseLogs }
+
     func nearestLooseLog(to p: SIMD3<Float>, within reach: Float) -> Entity? {
         looseLogs.min { flatDistance($0.position, p) < flatDistance($1.position, p) }
             .flatMap { flatDistance($0.position, p) < reach ? $0 : nil }

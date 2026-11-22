@@ -16,13 +16,15 @@ Spillet kjører i liggende format på både iPhone og iPad. Lyden følger lydlø
 
 - Tommelen på venstre halvdel av skjermen er en spak: dra, så går Lowe den veien.
 - Dra på høyre halvdel for å snu kameraet rundt Lowe.
-- Den store turkise knappen (eller et kort trykk til høyre) hugger. Står han nær stabben, går han bort og hugger kubben. Tre hogg deler den.
+- Den store turkise knappen (eller et kort trykk til høyre som ikke treffer noe) hugger. Står han nær stabben, går han bort og hugger kubben. Tre hogg deler den.
 - Den hvite knappen med pil hopper.
 - Står Lowe ved et grantre, hugger øksa i treet. Fire hogg, så faller det, og stokken blir liggende i snøen.
   Stubben blir stående, og etter en stund vokser et nytt tre opp.
-- Trykk på øksa ved en stokk, så løfter Lowe den opp på skuldrene. Han kan bære opptil tre stokker,
-  og går litt saktere jo flere han bærer. Trykk ved stabben, så legges alle stokkene i køen der.
-  Trykk et annet sted, så legger han fra seg den øverste.
+- Som i Minecraft trykker man på selve tingen for å bruke den. Lowe går bort til den hvis den er et stykke unna.
+  - Trykk på en stokk, så løfter Lowe den opp på skuldrene. Han kan bære opptil tre stokker,
+    og går litt saktere jo flere han bærer.
+  - Trykk på stabben, så legges alle stokkene han bærer i køen der.
+  - Trykk på Lowe selv, så legger han fra seg den øverste stokken.
 - Skogen er stor, med stier ut fra lysningen. Ti kongler ligger gjemt rundt omkring, og raden med små kongler
   oppe til venstre viser hvor mange Lowe har funnet: de brune er funnet, de lyse venter. Ekorn piler av gårde når han kommer nær, og det snør.
 - Vedstykkene flyr til stabelen. Ved stabelen venter et dyr fra skogen.
@@ -40,7 +42,7 @@ Spillet kjører i liggende format på både iPhone og iPad. Lyden følger lydlø
 - Hver kloss koster én ved. Telleren under konglene viser hvor mye ved Lowe har (12 fra start).
   En kløyvd kubbe gir 2, et felt tre gir 4 og en revet kloss gir 1 tilbake. Det som er bygd, huskes.
 - **Dag og natt:** En hel dag og natt tar seks minutter. Etter omtrent tre og et halvt minutt kommer skumringen,
-  og natta er blå med stjerner, måne og nordlys. Ved bålplassen i lysningen kan Lowe trykke på øksa og tenne bål.
+  og natta er blå med stjerner, måne og nordlys. Ved bålplassen i lysningen trykker man på bålplassen, så tenner Lowe bål.
   Bålet brenner natta gjennom og slukner når det blir lyst.
 
 ## Slik er koden bygd opp
