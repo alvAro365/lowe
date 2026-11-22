@@ -38,6 +38,13 @@ final class Forest: NSObject {
     private var chopBlock: Builder.Cell?
     /// Stokkene Lowe bærer på skuldrene, nederst først.
     private var carrying: [Entity] = []
+    /// Ryggsekken med kongler, steiner og ting Lowe har laget.
+    private let backpack = Backpack()
+    private var backpackView: BackpackView?
+    /// Tingene Lowe har satt ut i skogen.
+    private var things: PlacedThings!
+    /// Akebrettet Lowe står på, når han aker.
+    private var riding: Entity?
     private let carryLimit = 3
 
     private let blockPosition = SIMD3<Float>(0, 0, 0)
@@ -130,6 +137,7 @@ final class Forest: NSObject {
         controls.onBuild = { [weak self] in self?.toggleBuildMode() }
         controls.onTap = { [weak self] p in self?.tapped(at: p) }
         controls.onHold = { [weak self] p in self?.held(at: p) }
+        controls.onBackpack = { [weak self] in self?.openBackpack() }
         controls.onPickBlock = { [weak self] i in
             guard let self, let kind = Builder.Kind(rawValue: i) else { return }
             self.blockKind = kind
@@ -167,7 +175,11 @@ final class Forest: NSObject {
 
         woods = Woods(world: world, sound: sound)
         builder = Builder(world: world)
-        woods.onConeFound = { [weak self] found, total in self?.controls.setCones(found: found, total: total) }
+        things = PlacedThings(world: world)
+        woods.onConeFound = { [weak self] found, total in
+            self?.controls.setCones(found: found, total: total)
+            if found > 0 { self?.backpack.cones += 1 }
+        }
         woods.onAllConesFound = { [weak self] in
             guard let self else { return }
             self.sound.play(.cheer)
@@ -360,7 +372,41 @@ final class Forest: NSObject {
                 guard let self else { return }
                 self.goTo(self.blockPosition, stopShort: 1.1) { [weak self] in self?.dropAllAtBlock() }
             }
+        }
+        if riding != nil {
+            consider(position + [0, footY + 0.8, 0], radius: 60) { [weak self] in self?.stepOffSled() }
+        } else if !carrying.isEmpty {
             consider(position + [0, footY + 0.8, 0], radius: 55) { [weak self] in self?.putDownTop() }
+        }
+        for stone in woods.allStones {
+            consider(stone.position + [0, 0.08, 0], radius: 60) { [weak self, weak stone] in
+                guard let self, let stone else { return }
+                self.goTo(stone.position, stopShort: 0.5) { [weak self, weak stone] in
+                    guard let self, let stone, self.woods.allStones.contains(where: { $0 === stone }) else { return }
+                    self.woods.takeStone(stone)
+                    self.backpack.stones += 1
+                    self.sound.play(.pop)
+                    self.sound.buzz()
+                }
+            }
+        }
+        for item in things.placed {
+            let entity = item.entity
+            let height: Float = item.thing == .birdhouse ? 1.1 : 0.2
+            consider(entity.position + [0, height, 0], radius: 70) { [weak self, weak entity] in
+                guard let self, let entity else { return }
+                self.goTo(entity.position, stopShort: item.thing == .birdhouse ? 0.7 : 0.6) { [weak self, weak entity] in
+                    guard let self, let entity else { return }
+                    if item.thing == .sled {
+                        self.rideSled(entity)
+                    } else if let thing = self.things.remove(entity) {
+                        // Lykta og fuglekassa går tilbake i ryggsekken.
+                        self.backpack.add(thing)
+                        self.sound.play(.pop)
+                        self.sound.buzz()
+                    }
+                }
+            }
         }
         if !sky.fireLit {
             consider(sky.firePosition + [0, 0.2, 0], radius: 70) { [weak self] in
@@ -371,6 +417,106 @@ final class Forest: NSObject {
         guard let best else { return false }
         best.action()
         return true
+    }
+
+    // MARK: Ryggsekken og tingene
+
+    private func openBackpack() {
+        guard backpackView == nil, let view else { return }
+        controls.reset()
+        let bag = BackpackView(frame: view.bounds)
+        bag.onClose = { [weak self] in self?.closeBackpack() }
+        bag.onMake = { [weak self] thing in self?.make(thing) }
+        bag.onUse = { [weak self] thing in self?.use(thing) }
+        view.addSubview(bag)
+        backpackView = bag
+        refreshBackpack()
+        bag.alpha = 0
+        bag.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+        UIView.animate(withDuration: 0.2) {
+            bag.alpha = 1
+            bag.transform = .identity
+        }
+        sound.play(.pop)
+    }
+
+    private func closeBackpack() {
+        guard let bag = backpackView else { return }
+        backpackView = nil
+        UIView.animate(withDuration: 0.15, animations: { bag.alpha = 0 }) { _ in bag.removeFromSuperview() }
+        sound.play(.pop, volume: 0.5)
+    }
+
+    private func have(_ r: Resource) -> Int {
+        switch r {
+        case .wood: return wood
+        case .cone: return backpack.cones
+        case .stone: return backpack.stones
+        }
+    }
+
+    private func refreshBackpack() {
+        backpackView?.refresh(have: { [weak self] in self?.have($0) ?? 0 },
+                              things: { [weak self] in self?.backpack.count(of: $0) ?? 0 })
+    }
+
+    /// Lager en ting av det som ligger i ryggsekken.
+    private func make(_ thing: Thing) {
+        guard thing.recipe.allSatisfy({ have($0.0) >= $0.1 }) else {
+            backpackView?.bounce(thing, made: false)
+            sound.play(.whoosh, volume: 0.5)
+            return
+        }
+        for (r, n) in thing.recipe {
+            switch r {
+            case .wood: wood -= n
+            case .cone: backpack.cones -= n
+            case .stone: backpack.stones -= n
+            }
+        }
+        backpack.add(thing)
+        refreshBackpack()
+        backpackView?.bounce(thing, made: true)
+        sound.play(.cheer, volume: 0.7)
+        sound.buzz(strong: true)
+    }
+
+    /// Tar en ting ut av ryggsekken og setter den ned foran Lowe.
+    private func use(_ thing: Thing) {
+        guard backpack.count(of: thing) > 0 else {
+            sound.play(.whoosh, volume: 0.5)
+            return
+        }
+        if thing == .sled && riding != nil { return }
+        backpack.add(thing, -1)
+        closeBackpack()
+        let spot = position + [sin(yaw) * 1.1, 0, cos(yaw) * 1.1]
+        let ground = builder.groundHeight(at: spot, footY: footY + 0.1)
+        things.place(thing, at: spot + [0, ground, 0], yaw: thing == .sled ? yaw : yaw + .pi)
+        sound.play(.stack)
+        sound.buzz()
+    }
+
+    /// Lowe stiller seg på akebrettet og glir fortere av gårde.
+    private func rideSled(_ sled: Entity) {
+        guard riding == nil, things.remove(sled) != nil else { return }
+        let board = ThingModels.sled()
+        lowe.root.addChild(board)
+        board.position = [0, -0.12, 0]
+        riding = board
+        sound.play(.whoosh)
+        sound.buzz()
+        cheerTime = 0
+    }
+
+    /// Lowe går av akebrettet, og brettet går tilbake i ryggsekken.
+    private func stepOffSled() {
+        guard let board = riding else { return }
+        riding = nil
+        board.removeFromParent()
+        backpack.add(.sled)
+        sound.play(.pop)
+        sound.buzz()
     }
 
     /// Går bort til et punkt og stopper litt før det, og gjør så noe når han er framme.
@@ -491,6 +637,7 @@ final class Forest: NSObject {
         if let visitor { obstacles.append((visitor.position, visitorAnimal.size + 0.3)) }
         obstacles += woods.obstacles(near: q)
         obstacles.append((sky.firePosition, 0.6))
+        obstacles += things.obstacles(near: q)
         obstacles += builder.obstacles(near: q, footY: footY)
         for (center, radius) in obstacles {
             let d = SIMD2<Float>(q.x - center.x, q.z - center.z)
@@ -840,15 +987,16 @@ final class Forest: NSObject {
             cheer = cheerTime
         }
 
-        lowe.root.position = position + [0, footY, 0]
+        lowe.root.position = position + [0, footY + (riding == nil ? 0 : 0.12), 0]
         lowe.root.orientation = rotY(yaw)
-        lowe.pose(walkPhase: walkPhase, walk: walkAmount, chop: chop, cheer: cheer, carrying: !carrying.isEmpty, time: time)
+        lowe.pose(walkPhase: walkPhase, walk: riding == nil ? walkAmount : walkAmount * 0.15, chop: chop, cheer: cheer, carrying: !carrying.isEmpty, time: time)
 
         updateVisitor(dt)
         updateFlyers(dt)
         updateCamera(dt: dt)
         woods.update(dt, lowe: position, camera: camera.position(relativeTo: nil))
         sky.update(dt, around: position)
+        things.update(dt, daylight: sky.daylight)
         builder.showGhost(at: buildMode ? buildCell() : nil)
     }
 
@@ -864,7 +1012,7 @@ final class Forest: NSObject {
             let forward = SIMD2<Float>(-sin(cameraYaw), -cos(cameraYaw))
             let right = SIMD2<Float>(cos(cameraYaw), -sin(cameraYaw))
             let dir = simd_normalize(right * stick.x + forward * stick.y)
-            speed = walkSpeed * push * (1 - 0.1 * Float(carrying.count))
+            speed = walkSpeed * push * (1 - 0.1 * Float(carrying.count)) * (riding == nil ? 1 : 1.8)
             let next = keepClear(position + SIMD3(dir.x, 0, dir.y) * speed * dt)
             // Lowe kan ikke gå inn i en kloss. Han må hoppe for å komme opp på den.
             if !builder.blocked(at: next, footY: footY) { position = next }
