@@ -69,6 +69,9 @@ final class Forest: NSObject {
     private var arriveAction: (() -> Void)?
     /// Når Lowe gir opp å gå fram, om noe står i veien.
     private var targetDeadline: Float = 0
+    /// Tingen Lowe går bort til, og hvor nær han må være for å nå den.
+    private var arrivePoint = SIMD3<Float>(0, 0, 0)
+    private var arriveReach: Float = 0
     /// Treet Lowe hugger i, når han ikke står ved stabben.
     private var chopTree: Int?
     /// Hvor høyt føttene er: 0 på snøen, høyere oppå klosser og i hopp.
@@ -216,8 +219,8 @@ final class Forest: NSObject {
         }
 
         lowe.root.position = position
-        lowe.root.components.set(CollisionComponent(shapes: [ShapeResource.generateBox(size: [0.8, 1.7, 0.8])
-            .offsetBy(translation: [0, 0.85, 0])]))
+        lowe.root.components.set(CollisionComponent(shapes: [ShapeResource.generateBox(size: [0.6, 1.6, 0.6])
+            .offsetBy(translation: [0, 0.8, 0])]))
         world.addChild(lowe.root)
         updateCamera(dt: 1)
     }
@@ -380,20 +383,32 @@ final class Forest: NSObject {
         guard let view else { return nil }
         let p = view.convert(point, from: controls)
         var groundPoint: SIMD3<Float>?
-        for hit in view.hitTest(p, query: .all, mask: .all).sorted(by: { $0.distance < $1.distance }) {
+        var hitLowe = false
+        let hits = view.hitTest(p, query: .all, mask: .all).sorted(by: { $0.distance < $1.distance })
+        #if DEBUG
+        print("[Lowe] treff langs strålen: \(hits.map { String(describing: classify($0.entity)) })")
+        #endif
+        for hit in hits {
             guard let found = classify(hit.entity) else { continue }
-            if case .ground = found {
+            switch found {
+            case .ground:
                 if groundPoint == nil { groundPoint = hit.position }
-                continue
+            case .lowe:
+                // Lowe står ofte foran det man vil trykke på, for eksempel en stokk ved føttene hans.
+                // Derfor ser vi videre bak ham i stedet for å stoppe her.
+                hitLowe = true
+            default:
+                return found
             }
-            return found
         }
         if groundPoint == nil, let ray = view.ray(through: p), ray.direction.y < -0.01 {
             let t = -ray.origin.y / ray.direction.y
             groundPoint = ray.origin + ray.direction * t
         }
-        guard let g = groundPoint else { return nil }
-        return nearestTarget(to: g, within: 1.0) ?? .ground(g)
+        let loweMatters = hitLowe && (riding != nil || !carrying.isEmpty)
+        guard let g = groundPoint else { return loweMatters ? .lowe : nil }
+        if loweMatters && flatDistance(g, position) < 0.9 { return .lowe }
+        return nearestTarget(to: g, within: 1.0) ?? (loweMatters ? .lowe : .ground(g))
     }
 
     /// Hvilken ting en entitet hører til. Går oppover til foreldrene til den finner noe kjent.
@@ -623,6 +638,8 @@ final class Forest: NSObject {
         dir /= distance
         target = SIMD3(point.x + dir.x * stopShort, 0, point.z + dir.y * stopShort)
         targetDeadline = time + 4
+        arrivePoint = point
+        arriveReach = stopShort + 0.35
         chopWhenArrived = false
         arriveAction = { [weak self] in
             self?.yawGoal = self?.facing(point) ?? 0
@@ -1115,8 +1132,11 @@ final class Forest: NSObject {
             var delta = goal - position
             delta.y = 0
             let distance = simd_length(delta)
-            if distance < 0.03 {
-                position = goal
+            // Framme er han når han står nær nok tingen, selv om noe (et tre, en stubbe) hindrer ham
+            // i å komme helt til punktet han gikk mot.
+            let closeEnough = arriveAction != nil && flatDistance(position, arrivePoint) <= arriveReach
+            if distance < 0.03 || closeEnough {
+                if !closeEnough { position = goal }
                 target = nil
                 if chopWhenArrived {
                     chopWhenArrived = false
@@ -1128,9 +1148,15 @@ final class Forest: NSObject {
                     action()
                 }
             } else if arriveAction != nil && time > targetDeadline {
-                // Noe står i veien. Lowe blir stående.
+                // Noe står i veien. Er han likevel nesten framme, gjør han det han skulle. Ellers gir han opp.
                 target = nil
+                let action = arriveAction
                 arriveAction = nil
+                if flatDistance(position, arrivePoint) < 1.6 {
+                    action?()
+                } else {
+                    sound.play(.whoosh, volume: 0.5)
+                }
             } else {
                 speed = walkSpeed * (1 - 0.1 * Float(carrying.count))
                 let step = position + delta / distance * min(distance, speed * dt)
