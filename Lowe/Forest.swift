@@ -54,6 +54,10 @@ final class Forest: NSObject {
     private var yawGoal: Float = .pi
     private var target: SIMD3<Float>?
     private var chopWhenArrived = false
+    /// Det Lowe skal gjøre når han er framme, når han går bort til noe som ble trykket på.
+    private var arriveAction: (() -> Void)?
+    /// Når Lowe gir opp å gå fram, om noe står i veien.
+    private var targetDeadline: Float = 0
     /// Treet Lowe hugger i, når han ikke står ved stabben.
     private var chopTree: Int?
     /// Hvor høyt føttene er: 0 på snøen, høyere oppå klosser og i hopp.
@@ -269,7 +273,7 @@ final class Forest: NSObject {
     /// inntil siden av klossen den treffer, eller på bakken.
     private func tapped(at point: CGPoint) {
         guard buildMode else {
-            chopPressed()
+            if !interact(at: point) { chopPressed() }
             return
         }
         guard let hit = aim(at: point) else {
@@ -314,15 +318,6 @@ final class Forest: NSObject {
             placeBlock(at: buildCell())
             return
         }
-        if carryOrDrop() { return }
-        if !sky.fireLit && flatDistance(position, sky.firePosition) < 1.6 {
-            yawGoal = facing(sky.firePosition)
-            sky.lightFire()
-            sound.play(.whoosh)
-            sound.buzz(strong: true)
-            cheerTime = 0
-            return
-        }
         if flatDistance(position, blockPosition) < 1.7 {
             chopTree = nil
             walkThenChop(to: chopSpot(), facing: blockPosition)
@@ -336,42 +331,123 @@ final class Forest: NSObject {
         }
     }
 
-    /// Tar opp en stokk som ligger nær (opptil tre), legger alle stokkene ved stabben,
-    /// eller legger fra seg den øverste stokken et annet sted.
-    private func carryOrDrop() -> Bool {
-        if !carrying.isEmpty && flatDistance(position, blockPosition) < 2.3 {
-            for log in carrying {
-                world.addChild(log)
-                logArrived(log)
+    // MARK: Trykke på ting
+
+    /// Et trykk på skjermen treffer noe Lowe kan gjøre noe med, som i Minecraft:
+    /// en stokk tar han opp, stabben legger han stokkene ved, bålplassen tenner han,
+    /// og trykker man på Lowe selv, legger han fra seg den øverste stokken.
+    /// Gir false om trykket ikke traff noe, så hugger han i stedet.
+    private func interact(at point: CGPoint) -> Bool {
+        var best: (distance: CGFloat, action: () -> Void)?
+        func consider(_ p: SIMD3<Float>, radius: CGFloat, _ action: @escaping () -> Void) {
+            guard flatDistance(p, position) < 7, let screen = screenPoint(of: p) else { return }
+            let d = hypot(screen.x - point.x, screen.y - point.y)
+            if d < radius && d < (best?.distance ?? .infinity) { best = (d, action) }
+        }
+        if carrying.count < carryLimit {
+            for log in woods.allLooseLogs {
+                consider(log.position, radius: 70) { [weak self, weak log] in
+                    guard let self, let log else { return }
+                    self.goTo(log.position, stopShort: 0.6) { [weak self, weak log] in
+                        guard let self, let log, self.woods.allLooseLogs.contains(where: { $0 === log }) else { return }
+                        self.pickUp(log)
+                    }
+                }
             }
-            carrying = []
-            sound.buzz()
-            return true
         }
-        if carrying.count < carryLimit, let log = woods.nearestLooseLog(to: position, within: 1.5) {
-            woods.take(log)
-            yawGoal = facing(log.position)
-            lowe.root.addChild(log)
-            log.position = [0, 1.42 + Float(carrying.count) * 0.27, -0.04]
-            log.orientation = rotY(Float(carrying.count) * 0.12 - 0.12)
-            log.scale = [0.85, 0.85, 0.85]
-            carrying.append(log)
-            sound.play(.pop)
-            sound.buzz()
-            return true
+        if !carrying.isEmpty {
+            consider(blockPosition + [0, 0.4, 0], radius: 80) { [weak self] in
+                guard let self else { return }
+                self.goTo(self.blockPosition, stopShort: 1.1) { [weak self] in self?.dropAllAtBlock() }
+            }
+            consider(position + [0, footY + 0.8, 0], radius: 55) { [weak self] in self?.putDownTop() }
         }
-        if let log = carrying.popLast() {
+        if !sky.fireLit {
+            consider(sky.firePosition + [0, 0.2, 0], radius: 70) { [weak self] in
+                guard let self else { return }
+                self.goTo(self.sky.firePosition, stopShort: 1.0) { [weak self] in self?.lightFire() }
+            }
+        }
+        guard let best else { return false }
+        best.action()
+        return true
+    }
+
+    /// Går bort til et punkt og stopper litt før det, og gjør så noe når han er framme.
+    private func goTo(_ point: SIMD3<Float>, stopShort: Float, then action: @escaping () -> Void) {
+        var dir = SIMD2<Float>(position.x - point.x, position.z - point.z)
+        let distance = simd_length(dir)
+        if distance <= stopShort + 0.15 {
+            yawGoal = facing(point)
+            action()
+            return
+        }
+        dir /= distance
+        target = SIMD3(point.x + dir.x * stopShort, 0, point.z + dir.y * stopShort)
+        targetDeadline = time + 4
+        chopWhenArrived = false
+        arriveAction = { [weak self] in
+            self?.yawGoal = self?.facing(point) ?? 0
+            action()
+        }
+    }
+
+    private func pickUp(_ log: Entity) {
+        guard carrying.count < carryLimit else { return }
+        woods.take(log)
+        yawGoal = facing(log.position)
+        lowe.root.addChild(log)
+        log.position = [0, 1.42 + Float(carrying.count) * 0.27, -0.04]
+        log.orientation = rotY(Float(carrying.count) * 0.12 - 0.12)
+        log.scale = [0.85, 0.85, 0.85]
+        carrying.append(log)
+        sound.play(.pop)
+        sound.buzz()
+    }
+
+    /// Alle stokkene Lowe bærer, havner i køen ved stabben.
+    private func dropAllAtBlock() {
+        guard !carrying.isEmpty else { return }
+        for log in carrying {
             world.addChild(log)
-            let spot = position + [sin(yaw) * 0.7, 0, cos(yaw) * 0.7]
-            log.position = spot + [0, builder.groundHeight(at: spot, footY: footY + 0.1) + 0.17, 0]
-            log.orientation = rotY(yaw)
-            log.scale = [1, 1, 1]
-            woods.putDown(log)
-            sound.play(.land, volume: 0.6)
-            sound.buzz()
-            return true
+            logArrived(log)
         }
-        return false
+        carrying = []
+        sound.buzz()
+    }
+
+    /// Legger den øverste stokken ned foran seg.
+    private func putDownTop() {
+        guard let log = carrying.popLast() else { return }
+        world.addChild(log)
+        let spot = position + [sin(yaw) * 0.7, 0, cos(yaw) * 0.7]
+        log.position = spot + [0, builder.groundHeight(at: spot, footY: footY + 0.1) + 0.17, 0]
+        log.orientation = rotY(yaw)
+        log.scale = [1, 1, 1]
+        woods.putDown(log)
+        sound.play(.land, volume: 0.6)
+        sound.buzz()
+    }
+
+    private func lightFire() {
+        guard !sky.fireLit else { return }
+        sky.lightFire()
+        sound.play(.whoosh)
+        sound.buzz(strong: true)
+        cheerTime = 0
+    }
+
+    /// Hvor på skjermen et punkt i skogen havner, eller nil om det er bak kameraet.
+    private func screenPoint(of p: SIMD3<Float>) -> CGPoint? {
+        let size = controls.bounds.size
+        guard size.width > 0, size.height > 0 else { return nil }
+        let v = camera.orientation(relativeTo: nil).inverse.act(p - camera.position(relativeTo: nil))
+        guard v.z < -0.1 else { return nil }
+        let tanHalf = tan(camera.camera.fieldOfViewInDegrees * .pi / 360)
+        let aspect = Float(size.width / size.height)
+        let x = v.x / -v.z / (tanHalf * aspect)
+        let y = v.y / -v.z / tanHalf
+        return CGPoint(x: CGFloat((x + 1) / 2) * size.width, y: CGFloat((1 - y) / 2) * size.height)
     }
 
     private func walkThenChop(to spot: SIMD3<Float>, facing point: SIMD3<Float>) {
@@ -381,6 +457,7 @@ final class Forest: NSObject {
         } else {
             target = spot
             chopWhenArrived = true
+            arriveAction = nil
         }
     }
 
@@ -783,6 +860,7 @@ final class Forest: NSObject {
             // Spaken styrer ut fra hvor kameraet ser: opp på spaken er bort fra kameraet.
             target = nil
             chopWhenArrived = false
+            arriveAction = nil
             let forward = SIMD2<Float>(-sin(cameraYaw), -cos(cameraYaw))
             let right = SIMD2<Float>(cos(cameraYaw), -sin(cameraYaw))
             let dir = simd_normalize(right * stick.x + forward * stick.y)
@@ -803,9 +881,23 @@ final class Forest: NSObject {
                     yawGoal = chopFacing()
                     startChop()
                 }
+                if let action = arriveAction {
+                    arriveAction = nil
+                    action()
+                }
+            } else if arriveAction != nil && time > targetDeadline {
+                // Noe står i veien. Lowe blir stående.
+                target = nil
+                arriveAction = nil
             } else {
-                speed = walkSpeed
-                position += delta / distance * min(distance, walkSpeed * dt)
+                speed = walkSpeed * (1 - 0.1 * Float(carrying.count))
+                let step = position + delta / distance * min(distance, speed * dt)
+                if arriveAction != nil {
+                    let next = keepClear(step)
+                    if !builder.blocked(at: next, footY: footY) { position = next }
+                } else {
+                    position = step
+                }
                 yawGoal = atan2(delta.x, delta.z)
             }
         }
