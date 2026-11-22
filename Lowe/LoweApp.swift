@@ -1,22 +1,28 @@
-import SpriteKit
+import RealityKit
 import SwiftUI
 
+/// Lowes vedskog i 3D: Lowe går rundt i skogen og hugger ved.
+/// Skogen og styringen ligger i Forest og ControlsView.
 @main
 struct LoweApp: App {
-    var body: some Scene {
+    var body: some SwiftUI.Scene {
         WindowGroup {
-            GameView()
+            ForestView()
+                .ignoresSafeArea()
+                .statusBarHidden(true)
+                .persistentSystemOverlays(.hidden)
         }
     }
 }
 
-struct GameView: View {
-    @State private var scene = GameScene.make()
+struct ForestView: UIViewRepresentable {
+    func makeCoordinator() -> Forest { Forest() }
 
-    var body: some View {
-        SpriteView(scene: scene, preferredFramesPerSecond: 60)
-            .ignoresSafeArea()
-            .statusBarHidden(true)
-            .persistentSystemOverlays(.hidden)
+    func makeUIView(context: Context) -> ARView {
+        let view = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
+        context.coordinator.attach(to: view)
+        return view
     }
+
+    func updateUIView(_ uiView: ARView, context: Context) {}
 }
