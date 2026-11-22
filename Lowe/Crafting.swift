@@ -395,6 +395,27 @@ enum Icons {
         }
     }
 
+    static func fire(_ size: CGFloat) -> CALayer {
+        canvas(size) { g in
+            for (a, x) in [(CGFloat(0.4), CGFloat(34)), (-0.4, 66)] {
+                let log = UIBezierPath(roundedRect: CGRect(x: -26, y: -6, width: 52, height: 12), cornerRadius: 6)
+                log.apply(CGAffineTransform(rotationAngle: a))
+                log.apply(CGAffineTransform(translationX: x + 0, y: 82))
+                shape(log, Colors.bark, width: 4, in: g)
+            }
+            let flame = UIBezierPath()
+            flame.move(to: CGPoint(x: 50, y: 14))
+            flame.addCurve(to: CGPoint(x: 50, y: 78), controlPoint1: CGPoint(x: 86, y: 44), controlPoint2: CGPoint(x: 78, y: 78))
+            flame.addCurve(to: CGPoint(x: 50, y: 14), controlPoint1: CGPoint(x: 22, y: 78), controlPoint2: CGPoint(x: 14, y: 44))
+            shape(flame, Colors.flame, width: 4, in: g)
+            let inner = UIBezierPath()
+            inner.move(to: CGPoint(x: 50, y: 42))
+            inner.addCurve(to: CGPoint(x: 50, y: 76), controlPoint1: CGPoint(x: 66, y: 58), controlPoint2: CGPoint(x: 62, y: 76))
+            inner.addCurve(to: CGPoint(x: 50, y: 42), controlPoint1: CGPoint(x: 38, y: 76), controlPoint2: CGPoint(x: 34, y: 58))
+            shape(inner, Colors.sun, stroke: nil, in: g)
+        }
+    }
+
     static func backpack(_ size: CGFloat) -> CALayer {
         canvas(size) { g in
             let strap = UIBezierPath(arcCenter: CGPoint(x: 50, y: 24), radius: 13, startAngle: .pi, endAngle: 0, clockwise: true)

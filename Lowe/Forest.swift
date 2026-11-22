@@ -45,6 +45,23 @@ final class Forest: NSObject {
     private var things: PlacedThings!
     /// Akebrettet Lowe står på, når han aker.
     private var riding: Entity?
+    /// Hva den gule hånd-knappen gjør nå. Den vises når Lowe står ved noe han kan ta eller legge fra seg.
+    private enum Hand {
+        case stepOff, dropAtBlock, pickLog(Entity), pickStone(Entity), thing(Entity, Thing), lightFire, putDown
+
+        var key: String {
+            switch self {
+            case .stepOff: return "off"
+            case .dropAtBlock: return "drop"
+            case .pickLog: return "log"
+            case .pickStone: return "stone"
+            case .thing(_, let t): return "thing\(t.rawValue)"
+            case .lightFire: return "fire"
+            case .putDown: return "down"
+            }
+        }
+    }
+    private var handKey = ""
     private let carryLimit = 3
 
     private let blockPosition = SIMD3<Float>(0, 0, 0)
@@ -146,6 +163,7 @@ final class Forest: NSObject {
         }
         controls.onHold = { [weak self] p in self?.held(at: p) }
         controls.onBackpack = { [weak self] in self?.openBackpack() }
+        controls.onHand = { [weak self] in self?.handPressed() }
         controls.onPickBlock = { [weak self] i in
             guard let self, let kind = Builder.Kind(rawValue: i) else { return }
             self.blockKind = kind
@@ -293,7 +311,11 @@ final class Forest: NSObject {
     /// inntil siden av klossen den treffer, eller på bakken.
     private func tapped(at point: CGPoint) {
         guard buildMode else {
-            if !interact(at: point) && !pickUpNearby() { chopPressed() }
+            let hit = interact(at: point)
+            #if DEBUG
+            print("[Lowe] trykk \(point) traff noe: \(hit)")
+            #endif
+            if !hit && !pickUpNearby() { chopPressed() }
             return
         }
         guard let hit = aim(at: point) else {
@@ -428,6 +450,90 @@ final class Forest: NSObject {
         guard let best else { return false }
         best.action()
         return true
+    }
+
+    // MARK: Hånd-knappen
+
+    /// Det Lowe kan ta eller gjøre der han står, uten å trykke på selve tingen.
+    /// Dette avhenger bare av hvor Lowe står, så det virker alltid.
+    private func currentHand() -> Hand? {
+        if riding != nil { return .stepOff }
+        if !carrying.isEmpty && flatDistance(position, blockPosition) < 2.3 { return .dropAtBlock }
+        if carrying.count < carryLimit, let log = woods.nearestLooseLog(to: position, within: 1.8) { return .pickLog(log) }
+        if let stone = nearestStone(within: 1.6) { return .pickStone(stone) }
+        if let item = things.placed.min(by: { flatDistance($0.entity.position, position) < flatDistance($1.entity.position, position) }),
+           flatDistance(item.entity.position, position) < 1.5 {
+            return .thing(item.entity, item.thing)
+        }
+        if !sky.fireLit && flatDistance(position, sky.firePosition) < 1.9 { return .lightFire }
+        if !carrying.isEmpty { return .putDown }
+        return nil
+    }
+
+    private func nearestStone(within reach: Float) -> Entity? {
+        guard let stone = woods.allStones.min(by: { flatDistance($0.position, position) < flatDistance($1.position, position) }),
+              flatDistance(stone.position, position) < reach else { return nil }
+        return stone
+    }
+
+    /// Viser riktig bilde på hånd-knappen, eller skjuler den.
+    private func updateHand() {
+        let hand = buildMode || backpackView != nil ? nil : currentHand()
+        let key = hand?.key ?? ""
+        guard key != handKey else { return }
+        handKey = key
+        guard let hand else {
+            controls.setHand(nil)
+            return
+        }
+        let size: CGFloat = 64
+        switch hand {
+        case .stepOff: controls.setHand(Icons.sled(size), arrowUp: false)
+        case .dropAtBlock, .putDown: controls.setHand(Icons.wood(size), arrowUp: false)
+        case .pickLog: controls.setHand(Icons.wood(size), arrowUp: true)
+        case .pickStone: controls.setHand(Icons.stone(size), arrowUp: true)
+        case .thing(_, let t): controls.setHand(Icons.thing(t, size: size), arrowUp: t != .sled)
+        case .lightFire: controls.setHand(Icons.fire(size), arrowUp: nil)
+        }
+    }
+
+    private func handPressed() {
+        guard !buildMode, let hand = currentHand() else { return }
+        switch hand {
+        case .stepOff:
+            stepOffSled()
+        case .dropAtBlock:
+            yawGoal = facing(blockPosition)
+            dropAllAtBlock()
+        case .pickLog(let log):
+            pickUp(log)
+        case .pickStone(let stone):
+            collectStone(stone)
+        case .thing(let entity, let thing):
+            yawGoal = facing(entity.position)
+            if thing == .sled {
+                rideSled(entity)
+            } else if let back = things.remove(entity) {
+                backpack.add(back)
+                sound.play(.pop)
+                sound.buzz()
+            }
+        case .lightFire:
+            yawGoal = facing(sky.firePosition)
+            lightFire()
+        case .putDown:
+            putDownTop()
+        }
+        updateHand()
+    }
+
+    private func collectStone(_ stone: Entity) {
+        guard woods.allStones.contains(where: { $0 === stone }) else { return }
+        yawGoal = facing(stone.position)
+        woods.takeStone(stone)
+        backpack.stones += 1
+        sound.play(.pop)
+        sound.buzz()
     }
 
     /// Bommet trykket, men står Lowe rett ved en stokk eller en stein, tar han den opp likevel.
@@ -1032,6 +1138,9 @@ final class Forest: NSObject {
         updateFlyers(dt)
         updateCamera(dt: dt)
         woods.update(dt, lowe: position, camera: camera.position(relativeTo: nil))
+        // Går Lowe rett over en stein, plukker han den opp av seg selv, som konglene.
+        if footY < 0.3, let stone = nearestStone(within: 0.55) { collectStone(stone) }
+        updateHand()
         sky.update(dt, around: position)
         things.update(dt, daylight: sky.daylight)
         builder.showGhost(at: buildMode ? buildCell() : nil)

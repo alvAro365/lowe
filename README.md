@@ -20,7 +20,12 @@ Spillet kjører i liggende format på både iPhone og iPad. Lyden følger lydlø
 - Den hvite knappen med pil hopper.
 - Står Lowe ved et grantre, hugger øksa i treet. Fire hogg, så faller det, og stokken blir liggende i snøen.
   Stubben blir stående, og etter en stund vokser et nytt tre opp.
-- Som i Minecraft trykker man på selve tingen for å bruke den. Lowe går bort til den hvis den er et stykke unna.
+- **Den gule hånd-knappen** dukker opp over hoppeknappen når Lowe står ved noe han kan ta eller gjøre noe med.
+  Den viser et bilde av tingen, med en pil opp (ta) eller ned (legg fra seg):
+  stokk, stein, lykt, fuglekasse, akebrett (stå på / gå av), stabben (legg stokkene der), bålplassen (tenn bål),
+  og ellers legg fra deg den øverste stokken. Dette avhenger bare av hvor Lowe står, så det virker alltid.
+  Går Lowe rett over en stein, plukker han den opp av seg selv.
+- I tillegg kan man trykke på selve tingen, som i Minecraft. Lowe går bort til den hvis den er et stykke unna.
   - Trykk på en stokk, så løfter Lowe den opp på skuldrene. Han kan bære opptil tre stokker,
     og går litt saktere jo flere han bærer.
   - Trykk på stabben, så legges alle stokkene han bærer i køen der.
