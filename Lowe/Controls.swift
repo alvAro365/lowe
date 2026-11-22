@@ -14,6 +14,8 @@ final class ControlsView: UIView {
     var onBuild: (() -> Void)?
     /// Et kort trykk på høyre halvdel, med punktet på skjermen.
     var onTap: ((CGPoint) -> Void)?
+    /// Et kort trykk på venstre halvdel, der spaken er. Hugger ikke, men kan treffe ting i skogen.
+    var onStickTap: ((CGPoint) -> Void)?
     /// Fingeren holdes stille på høyre halvdel. Kommer igjen og igjen så lenge fingeren blir liggende.
     var onHold: ((CGPoint) -> Void)?
     var onPickBlock: ((Int) -> Void)?
@@ -37,6 +39,8 @@ final class ControlsView: UIView {
 
     private var stickTouch: UITouch?
     private var stickCenter: CGPoint = .zero
+    private var stickStartTime: TimeInterval = 0
+    private var stickTravel: CGFloat = 0
     private var lookTouch: UITouch?
     private var lookLast: CGPoint = .zero
     private var lookTravel: CGFloat = 0
@@ -395,6 +399,8 @@ final class ControlsView: UIView {
                 guard stickTouch == nil else { continue }
                 stickTouch = touch
                 stickCenter = p
+                stickStartTime = touch.timestamp
+                stickTravel = 0
                 stickBase.center = p
                 stickKnob.center = p
                 stickBase.alpha = 1
@@ -420,6 +426,7 @@ final class ControlsView: UIView {
                     dx *= stickRadius / length
                     dy *= stickRadius / length
                 }
+                stickTravel = max(stickTravel, hypot(p.x - stickCenter.x, p.y - stickCenter.y))
                 stickKnob.center = CGPoint(x: stickCenter.x + dx, y: stickCenter.y + dy)
                 move = SIMD2(Float(dx / stickRadius), Float(-dy / stickRadius))
             } else if touch === lookTouch {
@@ -447,12 +454,16 @@ final class ControlsView: UIView {
             if touch === stickTouch {
                 stickTouch = nil
                 move = .zero
+                // Et kort trykk på venstre side (uten å dra) er også et trykk på noe i skogen.
+                if tapCounts && stickTravel < 14 && touch.timestamp - stickStartTime < 0.4 {
+                    onStickTap?(touch.location(in: self))
+                }
                 UIView.animate(withDuration: 0.15) { self.placeStickAtRest() }
             } else if touch === lookTouch {
                 lookTouch = nil
                 let fired = holdFired
                 stopHold()
-                if tapCounts && !fired && lookTravel < 12 && touch.timestamp - lookStartTime < 0.35 {
+                if tapCounts && !fired && lookTravel < 14 && touch.timestamp - lookStartTime < 0.4 {
                     onTap?(touch.location(in: self))
                 }
             }

@@ -136,6 +136,14 @@ final class Forest: NSObject {
         controls.onJump = { [weak self] in self?.jump() }
         controls.onBuild = { [weak self] in self?.toggleBuildMode() }
         controls.onTap = { [weak self] p in self?.tapped(at: p) }
+        controls.onStickTap = { [weak self] p in
+            guard let self else { return }
+            if self.buildMode {
+                self.tapped(at: p)
+            } else if !self.interact(at: p) {
+                _ = self.pickUpNearby()
+            }
+        }
         controls.onHold = { [weak self] p in self?.held(at: p) }
         controls.onBackpack = { [weak self] in self?.openBackpack() }
         controls.onPickBlock = { [weak self] i in
@@ -285,7 +293,7 @@ final class Forest: NSObject {
     /// inntil siden av klossen den treffer, eller på bakken.
     private func tapped(at point: CGPoint) {
         guard buildMode else {
-            if !interact(at: point) { chopPressed() }
+            if !interact(at: point) && !pickUpNearby() { chopPressed() }
             return
         }
         guard let hit = aim(at: point) else {
@@ -304,6 +312,9 @@ final class Forest: NSObject {
 
     /// Strålen fra kameraet gjennom punktet på skjermen, og det den treffer i rutenettet.
     private func aim(at point: CGPoint) -> Builder.Hit? {
+        if let view, let ray = view.ray(through: view.convert(point, from: controls)) {
+            return builder.raycast(from: ray.origin, direction: ray.direction, maxDistance: 16)
+        }
         let size = controls.bounds.size
         guard size.width > 0, size.height > 0 else { return nil }
         let x = Float(2 * point.x / size.width - 1)
@@ -419,11 +430,30 @@ final class Forest: NSObject {
         return true
     }
 
+    /// Bommet trykket, men står Lowe rett ved en stokk eller en stein, tar han den opp likevel.
+    private func pickUpNearby() -> Bool {
+        if carrying.count < carryLimit, let log = woods.nearestLooseLog(to: position, within: 1.6) {
+            pickUp(log)
+            return true
+        }
+        if let stone = woods.allStones.min(by: { flatDistance($0.position, position) < flatDistance($1.position, position) }),
+           flatDistance(stone.position, position) < 1.4 {
+            yawGoal = facing(stone.position)
+            woods.takeStone(stone)
+            backpack.stones += 1
+            sound.play(.pop)
+            sound.buzz()
+            return true
+        }
+        return false
+    }
+
     // MARK: Ryggsekken og tingene
 
     private func openBackpack() {
         guard backpackView == nil, let view else { return }
         controls.reset()
+        controls.isHidden = true
         let bag = BackpackView(frame: view.bounds)
         bag.onClose = { [weak self] in self?.closeBackpack() }
         bag.onMake = { [weak self] thing in self?.make(thing) }
@@ -443,6 +473,7 @@ final class Forest: NSObject {
     private func closeBackpack() {
         guard let bag = backpackView else { return }
         backpackView = nil
+        controls.isHidden = false
         UIView.animate(withDuration: 0.15, animations: { bag.alpha = 0 }) { _ in bag.removeFromSuperview() }
         sound.play(.pop, volume: 0.5)
     }
@@ -585,6 +616,12 @@ final class Forest: NSObject {
 
     /// Hvor på skjermen et punkt i skogen havner, eller nil om det er bak kameraet.
     private func screenPoint(of p: SIMD3<Float>) -> CGPoint? {
+        // ARView vet selv hvordan kameraet tegner, så det spørres først.
+        if let view {
+            let v = camera.orientation(relativeTo: nil).inverse.act(p - camera.position(relativeTo: nil))
+            guard v.z < -0.1 else { return nil }
+            if let point = view.project(p) { return controls.convert(point, from: view) }
+        }
         let size = controls.bounds.size
         guard size.width > 0, size.height > 0 else { return nil }
         let v = camera.orientation(relativeTo: nil).inverse.act(p - camera.position(relativeTo: nil))

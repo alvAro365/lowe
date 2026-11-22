@@ -446,12 +446,12 @@ final class BackpackView: UIView {
         panel.layer.borderWidth = 5
         addSubview(panel)
 
-        closeButton.frame.size = CGSize(width: 54, height: 54)
-        closeButton.layer.cornerRadius = 27
+        closeButton.frame.size = CGSize(width: 50, height: 50)
+        closeButton.layer.cornerRadius = 25
         closeButton.backgroundColor = .white
         closeButton.layer.borderColor = Colors.ink.cgColor
         closeButton.layer.borderWidth = 4
-        let x = Icons.close(54)
+        let x = Icons.close(50)
         closeButton.layer.addSublayer(x)
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         panel.addSubview(closeButton)
@@ -568,10 +568,10 @@ final class BackpackView: UIView {
         let w = min(bounds.width - inset.left - inset.right - 40, 640)
         let h = min(bounds.height - inset.top - inset.bottom - 24, 340)
         panel.frame = CGRect(x: bounds.midX - w / 2, y: bounds.midY - h / 2, width: w, height: h)
-        closeButton.center = CGPoint(x: w - 20, y: 20)
+        closeButton.center = CGPoint(x: w - 42, y: 42)
 
         // Øverst: det Lowe har samlet.
-        let gap = (w - 60) / CGFloat(resourceViews.count)
+        let gap = (w - 60 - 60) / CGFloat(resourceViews.count)
         for (i, (_, holder, _)) in resourceViews.enumerated() {
             holder.frame.origin = CGPoint(x: 30 + CGFloat(i) * gap + (gap - 110) / 2, y: 14)
         }
