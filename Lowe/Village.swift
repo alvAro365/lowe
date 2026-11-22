@@ -41,7 +41,7 @@ final class VillageLayer: SKNode {
         ])))
 
         let stars: [(CGFloat, CGFloat)] = [(80, 70), (180, 40), (300, 90), (460, 50), (560, 110), (700, 60), (820, 40),
-                                           (980, 70), (1100, 40), (1130, 260), (40, 330), (640, 360), (380, 340)]
+                                           (980, 70), (1100, 40), (1130, 260), (40, 330), (520, 300), (380, 340), (1050, 330)]
         for (i, (x, y)) in stars.enumerated() {
             let star = Shape.node(Shape.circle(x, y, i % 2 == 0 ? 2.5 : 2), fill: Palette.white)
             addChild(star)
@@ -51,8 +51,13 @@ final class VillageLayer: SKNode {
                 .fadeAlpha(to: 1, duration: 0.8)
             ])))
         }
-        addChild(Shape.node(Shape.circle(1040, 320, 34), fill: SKColor(hex: 0xF3EFD8)))
-        addChild(Shape.node(Shape.circle(1054, 310, 30), fill: nightSky))
+        // Månen står midt på himmelen, så stjernekrukka oppe til høyre ikke dekker den.
+        // Månesigden tegnes som én form, så nordlyset bak ikke får et mørkt hull.
+        let moon = CGMutablePath()
+        moon.addArc(center: CGPoint(x: 680, y: 325), radius: 34, startAngle: deg(-97.4), endAngle: deg(26.3), clockwise: true)
+        moon.addArc(center: CGPoint(x: 694, y: 315), radius: 30, startAngle: deg(56.7), endAngle: deg(232.2), clockwise: false)
+        moon.closeSubpath()
+        addChild(Shape.node(moon, fill: SKColor(hex: 0xF3EFD8)))
 
         addChild(Shape.svg("M-600 520 Q240 440 480 500 Q720 450 940 500 Q1080 470 1780 490 L1780 1420 L-600 1420 Z", fill: nightHill, stroke: nil))
         for (x, y, s) in [(60, 520, 0.8), (240, 500, 0.65), (560, 500, 0.7), (700, 490, 0.6), (1140, 500, 0.8), (-90, 510, 0.7)]
