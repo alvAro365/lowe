@@ -171,11 +171,17 @@ final class PlacedThings {
 @MainActor
 enum ThingModels {
     static func build(_ thing: Thing) -> Entity {
+        let entity: Entity
+        let box: SIMD3<Float>
         switch thing {
-        case .sled: return sled()
-        case .lantern: return lantern()
-        case .birdhouse: return birdhouse()
+        case .sled: entity = sled(); box = [0.7, 0.5, 1.2]
+        case .lantern: entity = lantern(); box = [0.6, 0.7, 0.6]
+        case .birdhouse: entity = birdhouse(); box = [0.7, 1.7, 0.7]
         }
+        // En stor, usynlig boks rundt tingen, så et trykk på den treffer lett.
+        entity.components.set(CollisionComponent(shapes: [ShapeResource.generateBox(size: box)
+            .offsetBy(translation: [0, box.y / 2, 0])]))
+        return entity
     }
 
     /// Et akebrett av tre med svarte meier som bøyer seg opp foran, og et turkis tau.
@@ -259,6 +265,9 @@ extension Make {
         let small = part(sphere(0.07), UIColor(hex: 0x8794A0), at: [0.13, 0.035, 0.06], in: stone)
         small.scale = [1, 0.7, 1]
         part(sphere(0.06), Colors.snow, at: [-0.03, 0.12, -0.01], in: stone).scale = [1.3, 0.35, 1]
+        // En stor, usynlig boks rundt steinen, så et trykk på den treffer lett.
+        stone.components.set(CollisionComponent(shapes: [ShapeResource.generateBox(size: [0.7, 0.5, 0.7])
+            .offsetBy(translation: [0, 0.2, 0])]))
         return stone
     }
 }

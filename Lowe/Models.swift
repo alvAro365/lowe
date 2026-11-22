@@ -156,6 +156,8 @@ extension Make {
             let end = part(cylinder(0.006, 0.15), Colors.wood, at: [x, 0, 0], in: log)
             end.orientation = rotZ(.pi / 2)
         }
+        // En stor, usynlig boks rundt stokken, så et trykk på den treffer lett.
+        log.components.set(CollisionComponent(shapes: [ShapeResource.generateBox(size: [1.0, 0.6, 0.6])]))
         return log
     }
 
