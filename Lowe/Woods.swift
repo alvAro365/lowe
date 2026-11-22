@@ -80,6 +80,9 @@ final class Woods {
     /// Stokker fra felte trær som ligger på bakken og venter på at Lowe bærer dem.
     private var looseLogs: [Entity] = []
     private var cones: [Cone] = []
+    /// Steiner i snøen som Lowe kan plukke opp. En ny stein dukker opp igjen etter en stund.
+    private var stones: [Entity] = []
+    private let stoneRespawn: Float = 60
     private var conesFound = 0
     private let coneCount = 10
     private var coneRound: UInt64 = 0
@@ -101,6 +104,7 @@ final class Woods {
         buildPaths()
         plantTrees()
         placeCones()
+        placeStones()
         placeSquirrels()
         makeSnow()
     }
@@ -185,6 +189,43 @@ final class Woods {
             world.addChild(entity)
             cones.append(Cone(entity: entity, base: base, phase: Float(i)))
         }
+    }
+
+    private func placeStones() {
+        var random = SeededRandom(seed: 77)
+        var spots: [SIMD2<Float>] = []
+        var attempts = 0
+        while spots.count < 16 && attempts < 3000 {
+            attempts += 1
+            let p = SIMD2<Float>(random.next(-radius + 1, radius - 1), random.next(-radius + 1, radius - 1))
+            let r = simd_length(p)
+            if r < 3.5 || r > radius - 1 { continue }
+            if trees.contains(where: { simd_distance(SIMD2($0.position.x, $0.position.z), p) < 1.0 }) { continue }
+            if spots.contains(where: { simd_distance($0, p) < 2.5 }) { continue }
+            spots.append(p)
+        }
+        for p in spots { addStone(at: SIMD3(p.x, 0, p.y)) }
+    }
+
+    private func addStone(at p: SIMD3<Float>) {
+        let stone = Make.stone()
+        stone.position = p
+        stone.orientation = rotY(p.x * 3.1 + p.z)
+        world.addChild(stone)
+        stones.append(stone)
+    }
+
+    /// Steinene som ligger i snøen.
+    var allStones: [Entity] { stones }
+
+    /// Lowe tar steinen. Den forsvinner med et lite snøpuff, og en ny kommer på samme sted senere.
+    func takeStone(_ stone: Entity) {
+        guard let i = stones.firstIndex(where: { $0 === stone }) else { return }
+        stones.remove(at: i)
+        let p = stone.position
+        puff(at: p + [0, 0.1, 0], count: 5, spread: 0.2, up: 1.2)
+        stone.removeFromParent()
+        after(stoneRespawn) { [weak self] in self?.addStone(at: p) }
     }
 
     private func placeSquirrels() {

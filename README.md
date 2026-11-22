@@ -41,6 +41,18 @@ Spillet kjører i liggende format på både iPhone og iPad. Lyden følger lydlø
   - Med byggingen av hugger øksa bort klossen foran ham.
 - Hver kloss koster én ved. Telleren under konglene viser hvor mye ved Lowe har (12 fra start).
   En kløyvd kubbe gir 2, et felt tre gir 4 og en revet kloss gir 1 tilbake. Det som er bygd, huskes.
+- **Ryggsekken:** Knappen med sekken oppe til høyre åpner ryggsekken. Den viser bare bilder og tall:
+  - Øverst det Lowe har samlet: ved, kongler (hver kongle han finner) og steiner. Steiner ligger rundt i skogen;
+    trykk på en stein, så plukker han den opp. En ny stein dukker opp på samme sted etter et minutt.
+  - I midten det han kan lage. Kortene med turkis kant har han nok til; trykk på kortet, så lages tingen.
+    - Akebrett: 4 ved og 1 stein
+    - Lykt: 1 ved og 2 steiner
+    - Fuglekasse: 3 ved og 2 kongler
+  - Nederst tingene han har laget. Trykk på en, så setter han den ned foran seg i skogen.
+- Lykta lyser varmt, mest om natta. På fuglekassa sitter en liten fugl som vipper og tar en runde nå og da.
+  Trykk på lykta eller fuglekassa, så går den tilbake i sekken.
+- Trykk på akebrettet, så stiller Lowe seg på det og glir nesten dobbelt så fort. Trykk på Lowe for å gå av,
+  så går brettet tilbake i sekken. Det som er laget og satt ut, huskes.
 - **Dag og natt:** En hel dag og natt tar seks minutter. Etter omtrent tre og et halvt minutt kommer skumringen,
   og natta er blå med stjerner, måne og nordlys. Ved bålplassen i lysningen trykker man på bålplassen, så tenner Lowe bål.
   Bålet brenner natta gjennom og slukner når det blir lyst.
@@ -57,6 +69,7 @@ Spillet bruker RealityKit. Alt er bygd av enkle former (bokser, kuler, sylindre 
 | `Lowe/LoweFigure.swift` | Lowe bygd av enkle 3D-former, med gange og hogg |
 | `Lowe/Woods.swift` | Den store skogen: stier, trær som kan felles, stokker som kan bæres, kongler, ekorn og snø |
 | `Lowe/Building.swift` | Byggeklossene: 3D-rutenett, sikte fra kameraet, klosstyper, klatring og lagring |
+| `Lowe/Crafting.swift` | Ryggsekken, oppskriftene, tingene Lowe lager (akebrett, lykt, fuglekasse) og bildene til dem |
 | `Lowe/Sky.swift` | Dag og natt, stjerner, måne, nordlys og bålet |
 | `Lowe/Animals.swift` | De fem dyrene, bygd av enkle former i fargene fra 2D-designet |
 | `Lowe/Models.swift` | Farger og byggeklosser: trær, stabbe, kubbe og vedstykker |

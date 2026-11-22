@@ -17,6 +17,7 @@ final class ControlsView: UIView {
     /// Fingeren holdes stille på høyre halvdel. Kommer igjen og igjen så lenge fingeren blir liggende.
     var onHold: ((CGPoint) -> Void)?
     var onPickBlock: ((Int) -> Void)?
+    var onBackpack: (() -> Void)?
 
     private let stickRadius: CGFloat = 64
     private let stickBase = UIView()
@@ -24,6 +25,7 @@ final class ControlsView: UIView {
     private let chopButton = UIView()
     private let jumpButton = UIView()
     private let buildButton = UIView()
+    private let backpackButton = UIView()
     private let axeLayer = ControlsView.axeIcon(in: 104)
     private let blockLayer = ControlsView.blockIcon(in: 104, plus: true)
     private let woodLabel = UILabel()
@@ -93,6 +95,10 @@ final class ControlsView: UIView {
         woodLabel.shadowOffset = CGSize(width: 0, height: 2)
         woodLabel.isUserInteractionEnabled = false
         addSubview(woodLabel)
+        styleButton(backpackButton, size: 70, color: .white)
+        let bag = Icons.backpack(58)
+        bag.frame.origin = CGPoint(x: 6, y: 5)
+        backpackButton.layer.addSublayer(bag)
         styleButton(jumpButton, size: 78, color: .white)
         let arrow = UIImageView(image: UIImage(systemName: "arrow.up",
                                                withConfiguration: UIImage.SymbolConfiguration(pointSize: 34, weight: .black)))
@@ -269,7 +275,7 @@ final class ControlsView: UIView {
     }
 
     /// En kongle tegnet i 28 x 38 punkter: en avlang kropp med rutete skjell og en liten stilk på toppen.
-    private static func pineconeLayer(found: Bool) -> CALayer {
+    static func pineconeLayer(found: Bool) -> CALayer {
         let layer = CALayer()
         layer.frame = CGRect(x: 0, y: 0, width: 28, height: 38)
         let body = UIBezierPath()
@@ -340,6 +346,7 @@ final class ControlsView: UIView {
                                     y: bounds.maxY - inset.bottom - margin - 52)
         jumpButton.center = CGPoint(x: chopButton.center.x - 112, y: chopButton.center.y + 12)
         buildButton.center = CGPoint(x: chopButton.center.x + 6, y: chopButton.center.y - 116)
+        backpackButton.center = CGPoint(x: bounds.maxX - inset.right - margin - 35, y: bounds.minY + inset.top + 46)
         woodIcon.center = CGPoint(x: bounds.minX + inset.left + 36, y: bounds.minY + inset.top + 82)
         woodLabel.frame.origin = CGPoint(x: woodIcon.frame.maxX + 8, y: woodIcon.center.y - woodLabel.bounds.height / 2)
         // Raden står mellom spaken og hoppeknappen.
@@ -381,6 +388,9 @@ final class ControlsView: UIView {
             } else if hits(buildButton, p) {
                 bounce(buildButton)
                 onBuild?()
+            } else if hits(backpackButton, p) {
+                bounce(backpackButton)
+                onBackpack?()
             } else if p.x < bounds.midX {
                 guard stickTouch == nil else { continue }
                 stickTouch = touch
@@ -475,6 +485,15 @@ final class ControlsView: UIView {
         holdTimer?.invalidate()
         holdTimer = nil
         holdFired = false
+    }
+
+    /// Slipper spaken og kameradraget, for eksempel når ryggsekken åpnes over styringen.
+    func reset() {
+        stickTouch = nil
+        lookTouch = nil
+        move = .zero
+        stopHold()
+        placeStickAtRest()
     }
 
     private func hits(_ button: UIView, _ p: CGPoint) -> Bool {
