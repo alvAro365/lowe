@@ -45,6 +45,20 @@ final class Forest: NSObject {
     private var pile: [Entity] = []
     private var reserved = 0
 
+    // Dyret som venter ved vedstabelen
+    private var visitor: Entity?
+    private var visitorAnimal: Animal = .hedgehog
+    private var visitorGoal: SIMD3<Float>?
+    private var visitorArrived: (() -> Void)?
+    private var visitorWaiting = false
+    private var visitorYaw: Float = 0
+    private var visitorPhase: Float = 0
+    private var visitorHopTime: Float?
+    /// Hvor mange stabler som er hentet til sammen. Huskes mellom gangene, så neste dyr kommer.
+    private var deliveries = UserDefaults.standard.integer(forKey: "lowe.deliveries")
+    private let visitorHome = SIMD3<Float>(9, 0, -8)
+    private var waitSpot: SIMD3<Float> { pilePosition + [0.95 + visitorAnimal.size, 0, 0.5] }
+
     private var flyers: [Flyer] = []
     private var timers: [(time: Float, action: () -> Void)] = []
     private var time: Float = 0
@@ -87,6 +101,7 @@ final class Forest: NSObject {
             }
         }
         after(0.6) { [weak self] in self?.dropLog() }
+        after(1.2) { [weak self] in self?.visitorArrives() }
     }
 
     // MARK: Scenen
@@ -190,7 +205,9 @@ final class Forest: NSObject {
             let c = simd_normalize(fromCenter) * forestRadius
             q = SIMD3(c.x, 0, c.y)
         }
-        for (center, radius) in [(blockPosition, Float(0.6)), (pilePosition, Float(0.95))] {
+        var obstacles: [(SIMD3<Float>, Float)] = [(blockPosition, 0.6), (pilePosition, 0.95)]
+        if let visitor { obstacles.append((visitor.position, visitorAnimal.size + 0.3)) }
+        for (center, radius) in obstacles {
             let d = SIMD2<Float>(q.x - center.x, q.z - center.z)
             let len = simd_length(d)
             if len < radius {
@@ -306,12 +323,13 @@ final class Forest: NSObject {
         sound.play(.stack)
         piece.scale = [1.15, 1.15, 1.15]
         after(0.1) { [weak piece] in piece?.scale = [1, 1, 1] }
+        if visitorWaiting { visitorHopTime = 0 }
         if pile.count >= pileCapacity {
             after(0.3) { [weak self] in self?.pileFull() }
         }
     }
 
-    /// Full stabel: Lowe hopper av glede, det regner konfetti, og stabelen tømmes.
+    /// Full stabel: Lowe hopper av glede, det regner konfetti, og dyret henter veden.
     private func pileFull() {
         sound.play(.cheer)
         cheerTime = 0
@@ -323,20 +341,116 @@ final class Forest: NSObject {
                    gravity: 7, duration: 1.6, target: nil,
                    spin: [Float.random(in: -10...10), Float.random(in: -10...10), 0])
         }
-        after(1.6) { [weak self] in self?.clearPile() }
+        after(1.4) { [weak self] in self?.deliverWoodIfReady() }
     }
 
-    private func clearPile() {
-        for (i, piece) in pile.enumerated() {
-            let v: SIMD3<Float> = [Float.random(in: -1.5...1.5), Float.random(in: 5...7), Float.random(in: -2.5 ... -1)]
-            after(Float(i) * 0.04) { [weak self, weak piece] in
-                guard let self, let piece else { return }
-                self.launch(piece, velocity: v, gravity: 9, duration: 0.9, target: nil, spin: [6, 0, 4])
+    // MARK: Dyrene
+
+    /// Neste dyr i rekka kommer gående ut av skogen og stiller seg ved vedstabelen.
+    private func visitorArrives() {
+        guard visitor == nil else { return }
+        visitorAnimal = Animal.allCases[deliveries % Animal.allCases.count]
+        let animal = visitorAnimal.build()
+        animal.position = visitorHome
+        world.addChild(animal)
+        visitor = animal
+        visitorWaiting = false
+        walkVisitor(to: waitSpot) { [weak self] in
+            guard let self else { return }
+            self.visitorWaiting = true
+            self.visitorHopTime = 0
+            if self.pile.count >= self.pileCapacity {
+                self.after(0.4) { [weak self] in self?.deliverWoodIfReady() }
             }
         }
+    }
+
+    /// Veden flyr fra stabelen til dyret, som hopper av glede og går hjem med den.
+    private func deliverWoodIfReady() {
+        guard visitorWaiting, let visitor, pile.count >= pileCapacity else { return }
+        visitorWaiting = false
+        deliveries += 1
+        UserDefaults.standard.set(deliveries, forKey: "lowe.deliveries")
+
+        let target = visitor.position + [0, visitorAnimal.height * 0.6, 0]
+        let step: Float = 0.07
+        for (i, piece) in pile.enumerated() {
+            after(Float(i) * step) { [weak self, weak piece] in
+                guard let self, let piece else { return }
+                let d: Float = 0.5
+                let g: Float = 10
+                var v = (target - piece.position) / d
+                v.y = (target.y - piece.position.y + 0.5 * g * d * d) / d
+                self.launch(piece, velocity: v, gravity: g, duration: d, target: target, spin: [4, 0, 3]) { [weak self, weak piece] in
+                    piece?.removeFromParent()
+                    self?.sound.play(.stack, volume: 0.6)
+                    self?.visitorHopTime = 0
+                }
+            }
+        }
+        let woodTime = Float(pile.count) * step + 0.6
         pile.removeAll()
         reserved = 0
+        after(woodTime + 0.6) { [weak self] in self?.visitorLeaves() }
         after(0.8) { [weak self] in self?.dropLog() }
+    }
+
+    private func visitorLeaves() {
+        walkVisitor(to: visitorHome) { [weak self] in
+            guard let self else { return }
+            self.visitor?.removeFromParent()
+            self.visitor = nil
+            self.after(1.0) { [weak self] in self?.visitorArrives() }
+        }
+    }
+
+    private func walkVisitor(to goal: SIMD3<Float>, then arrived: @escaping () -> Void) {
+        visitorGoal = goal
+        visitorArrived = arrived
+    }
+
+    private func updateVisitor(_ dt: Float) {
+        guard let visitor else { return }
+        var moving = false
+        if let goal = visitorGoal {
+            var delta = goal - visitor.position
+            delta.y = 0
+            let distance = simd_length(delta)
+            if distance < 0.03 {
+                visitor.position = goal
+                visitorGoal = nil
+                let done = visitorArrived
+                visitorArrived = nil
+                done?()
+            } else {
+                visitor.position += delta / distance * min(distance, 1.8 * dt)
+                visitorYaw = turn(visitorYaw, toward: atan2(delta.x, delta.z), by: dt * 8)
+                moving = true
+            }
+        } else {
+            // Mens det venter, følger dyret Lowe med blikket.
+            let toLowe = position - visitor.position
+            visitorYaw = turn(visitorYaw, toward: atan2(toLowe.x, toLowe.z), by: dt * 4)
+        }
+        visitor.orientation = rotY(visitorYaw)
+
+        var lift: Float = 0
+        if moving {
+            visitorPhase += dt * 12
+            lift = abs(sin(visitorPhase)) * visitorAnimal.bounce * 2
+        }
+        if let hop = visitorHopTime {
+            let t = hop + dt / 0.35
+            visitorHopTime = t < 1 ? t : nil
+            lift += sin(Float.pi * min(1, t)) * 0.22
+        }
+        visitor.findEntity(named: "body")?.position.y = lift
+    }
+
+    private func turn(_ angle: Float, toward goal: Float, by amount: Float) -> Float {
+        var d = goal - angle
+        d = atan2(sin(d), cos(d))
+        return angle + d * min(1, amount)
     }
 
     private func burstChips(at p: SIMD3<Float>) {
@@ -385,6 +499,7 @@ final class Forest: NSObject {
         lowe.root.orientation = rotY(yaw)
         lowe.pose(walkPhase: walkPhase, walk: walkAmount, chop: chop, cheer: cheer, time: time)
 
+        updateVisitor(dt)
         updateFlyers(dt)
         updateCamera(dt: dt)
     }
