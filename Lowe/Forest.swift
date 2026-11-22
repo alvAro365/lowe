@@ -45,23 +45,10 @@ final class Forest: NSObject {
     private var things: PlacedThings!
     /// Akebrettet Lowe står på, når han aker.
     private var riding: Entity?
-    /// Hva den gule hånd-knappen gjør nå. Den vises når Lowe står ved noe han kan ta eller legge fra seg.
-    private enum Hand {
-        case stepOff, dropAtBlock, pickLog(Entity), pickStone(Entity), thing(Entity, Thing), lightFire, putDown
-
-        var key: String {
-            switch self {
-            case .stepOff: return "off"
-            case .dropAtBlock: return "drop"
-            case .pickLog: return "log"
-            case .pickStone: return "stone"
-            case .thing(_, let t): return "thing\(t.rawValue)"
-            case .lightFire: return "fire"
-            case .putDown: return "down"
-            }
-        }
-    }
-    private var handKey = ""
+    /// Det trykkbare rundt bålplassen, så et trykk på bålet treffer.
+    private let fireTarget = Entity()
+    private var snowPlane: Entity?
+    private var choppingBlockEntity: Entity?
     private let carryLimit = 3
 
     private let blockPosition = SIMD3<Float>(0, 0, 0)
@@ -153,17 +140,8 @@ final class Forest: NSObject {
         controls.onJump = { [weak self] in self?.jump() }
         controls.onBuild = { [weak self] in self?.toggleBuildMode() }
         controls.onTap = { [weak self] p in self?.tapped(at: p) }
-        controls.onStickTap = { [weak self] p in
-            guard let self else { return }
-            if self.buildMode {
-                self.tapped(at: p)
-            } else if !self.interact(at: p) {
-                _ = self.pickUpNearby()
-            }
-        }
         controls.onHold = { [weak self] p in self?.held(at: p) }
         controls.onBackpack = { [weak self] in self?.openBackpack() }
-        controls.onHand = { [weak self] in self?.handPressed() }
         controls.onPickBlock = { [weak self] i in
             guard let self, let kind = Builder.Kind(rawValue: i) else { return }
             self.blockKind = kind
@@ -174,6 +152,10 @@ final class Forest: NSObject {
         controls.setCones(found: 0, total: 10)
         controls.setWood(wood)
         sky = Sky(world: world, view: view, sun: sun)
+        fireTarget.position = sky.firePosition
+        fireTarget.components.set(CollisionComponent(shapes: [ShapeResource.generateBox(size: [1.4, 0.8, 1.4])
+            .offsetBy(translation: [0, 0.4, 0])]))
+        world.addChild(fireTarget)
 
         updateSubscription = view.scene.subscribe(to: SceneEvents.Update.self) { [weak self] event in
             let dt = Float(min(event.deltaTime, 1.0 / 20))
@@ -197,7 +179,10 @@ final class Forest: NSObject {
         camera.camera.fieldOfViewInDegrees = 45
         world.addChild(camera)
 
-        Make.part(.generatePlane(width: 90, depth: 90), Colors.snow, in: world)
+        let snow = Make.part(.generatePlane(width: 90, depth: 90), Colors.snow, in: world)
+        snow.components.set(CollisionComponent(shapes: [ShapeResource.generateBox(width: 90, height: 0.02, depth: 90)
+            .offsetBy(translation: [0, -0.01, 0])]))
+        snowPlane = snow
 
         woods = Woods(world: world, sound: sound)
         builder = Builder(world: world)
@@ -221,13 +206,18 @@ final class Forest: NSObject {
 
         let block = Make.choppingBlock()
         block.position = blockPosition
+        block.components.set(CollisionComponent(shapes: [ShapeResource.generateBox(size: [1.0, 1.1, 1.0])
+            .offsetBy(translation: [0, 0.55, 0])]))
         world.addChild(block)
+        choppingBlockEntity = block
 
         for z in [Float(0.2), -0.2] {
             Make.part(Make.box(1.4, 0.08, 0.14, r: 0.02), Colors.trunk, at: pilePosition + [0, 0.04, z], in: world)
         }
 
         lowe.root.position = position
+        lowe.root.components.set(CollisionComponent(shapes: [ShapeResource.generateBox(size: [0.8, 1.7, 0.8])
+            .offsetBy(translation: [0, 0.85, 0])]))
         world.addChild(lowe.root)
         updateCamera(dt: 1)
     }
@@ -311,11 +301,11 @@ final class Forest: NSObject {
     /// inntil siden av klossen den treffer, eller på bakken.
     private func tapped(at point: CGPoint) {
         guard buildMode else {
-            let hit = interact(at: point)
+            let found = target(at: point)
             #if DEBUG
-            print("[Lowe] trykk \(point) traff noe: \(hit)")
+            print("[Lowe] trykk \(point) traff: \(String(describing: found))")
             #endif
-            if !hit && !pickUpNearby() { chopPressed() }
+            act(on: found)
             return
         }
         guard let hit = aim(at: point) else {
@@ -378,153 +368,128 @@ final class Forest: NSObject {
 
     // MARK: Trykke på ting
 
-    /// Et trykk på skjermen treffer noe Lowe kan gjøre noe med, som i Minecraft:
-    /// en stokk tar han opp, stabben legger han stokkene ved, bålplassen tenner han,
-    /// og trykker man på Lowe selv, legger han fra seg den øverste stokken.
-    /// Gir false om trykket ikke traff noe, så hugger han i stedet.
-    private func interact(at point: CGPoint) -> Bool {
-        var best: (distance: CGFloat, action: () -> Void)?
-        func consider(_ p: SIMD3<Float>, radius: CGFloat, _ action: @escaping () -> Void) {
-            guard flatDistance(p, position) < 7, let screen = screenPoint(of: p) else { return }
-            let d = hypot(screen.x - point.x, screen.y - point.y)
-            if d < radius && d < (best?.distance ?? .infinity) { best = (d, action) }
+    /// Det et trykk på skjermen traff.
+    private enum Target {
+        case log(Entity), stone(Entity), thing(Entity, Thing), block, fire, lowe, ground(SIMD3<Float>)
+    }
+
+    /// Finner hva fingeren peker på, med RealityKit sin egen treffsjekk mot store, usynlige bokser
+    /// rundt tingene. Treffer trykket bare snøen, velges den nærmeste tingen innen en meter fra det punktet,
+    /// så små ting som steiner er lette å treffe.
+    private func target(at point: CGPoint) -> Target? {
+        guard let view else { return nil }
+        let p = view.convert(point, from: controls)
+        var groundPoint: SIMD3<Float>?
+        for hit in view.hitTest(p, query: .all, mask: .all).sorted(by: { $0.distance < $1.distance }) {
+            guard let found = classify(hit.entity) else { continue }
+            if case .ground = found {
+                if groundPoint == nil { groundPoint = hit.position }
+                continue
+            }
+            return found
+        }
+        if groundPoint == nil, let ray = view.ray(through: p), ray.direction.y < -0.01 {
+            let t = -ray.origin.y / ray.direction.y
+            groundPoint = ray.origin + ray.direction * t
+        }
+        guard let g = groundPoint else { return nil }
+        return nearestTarget(to: g, within: 1.0) ?? .ground(g)
+    }
+
+    /// Hvilken ting en entitet hører til. Går oppover til foreldrene til den finner noe kjent.
+    private func classify(_ entity: Entity) -> Target? {
+        var current: Entity? = entity
+        while let e = current {
+            if e === lowe.root { return .lowe }
+            if woods.allLooseLogs.contains(where: { $0 === e }) { return .log(e) }
+            if woods.allStones.contains(where: { $0 === e }) { return .stone(e) }
+            if let item = things.placed.first(where: { $0.entity === e }) { return .thing(e, item.thing) }
+            if e === choppingBlockEntity { return .block }
+            if e === fireTarget { return .fire }
+            if e === snowPlane { return .ground(.zero) }
+            current = e.parent
+        }
+        return nil
+    }
+
+    /// Den nærmeste tingen ved et punkt i snøen.
+    private func nearestTarget(to g: SIMD3<Float>, within reach: Float) -> Target? {
+        var best: (Float, Target)?
+        func consider(_ p: SIMD3<Float>, _ t: Target, _ r: Float) {
+            let d = flatDistance(p, g)
+            if d < r && d < (best?.0 ?? .infinity) { best = (d, t) }
         }
         if carrying.count < carryLimit {
-            for log in woods.allLooseLogs {
-                consider(log.position, radius: 70) { [weak self, weak log] in
-                    guard let self, let log else { return }
-                    self.goTo(log.position, stopShort: 0.6) { [weak self, weak log] in
-                        guard let self, let log, self.woods.allLooseLogs.contains(where: { $0 === log }) else { return }
-                        self.pickUp(log)
-                    }
-                }
+            for log in woods.allLooseLogs { consider(log.position, .log(log), reach) }
+        }
+        for stone in woods.allStones { consider(stone.position, .stone(stone), reach) }
+        for item in things.placed { consider(item.entity.position, .thing(item.entity, item.thing), reach) }
+        if !carrying.isEmpty { consider(blockPosition, .block, 1.3) }
+        if !sky.fireLit { consider(sky.firePosition, .fire, reach) }
+        return best?.1
+    }
+
+    /// Gjør det trykket ba om. Er tingen et stykke unna, går Lowe bort til den først.
+    private func act(on target: Target?) {
+        switch target {
+        case .log(let log)?:
+            guard carrying.count < carryLimit else {
+                sound.play(.whoosh, volume: 0.5)
+                return
             }
-        }
-        if !carrying.isEmpty {
-            consider(blockPosition + [0, 0.4, 0], radius: 80) { [weak self] in
-                guard let self else { return }
-                self.goTo(self.blockPosition, stopShort: 1.1) { [weak self] in self?.dropAllAtBlock() }
+            goTo(log.position, stopShort: 0.6) { [weak self, weak log] in
+                guard let self, let log, self.woods.allLooseLogs.contains(where: { $0 === log }) else { return }
+                self.pickUp(log)
             }
-        }
-        if riding != nil {
-            consider(position + [0, footY + 0.8, 0], radius: 60) { [weak self] in self?.stepOffSled() }
-        } else if !carrying.isEmpty {
-            consider(position + [0, footY + 0.8, 0], radius: 55) { [weak self] in self?.putDownTop() }
-        }
-        for stone in woods.allStones {
-            consider(stone.position + [0, 0.08, 0], radius: 60) { [weak self, weak stone] in
+        case .stone(let stone)?:
+            goTo(stone.position, stopShort: 0.5) { [weak self, weak stone] in
                 guard let self, let stone else { return }
-                self.goTo(stone.position, stopShort: 0.5) { [weak self, weak stone] in
-                    guard let self, let stone, self.woods.allStones.contains(where: { $0 === stone }) else { return }
-                    self.woods.takeStone(stone)
-                    self.backpack.stones += 1
+                self.collectStone(stone)
+            }
+        case .thing(let entity, let thing)?:
+            goTo(entity.position, stopShort: thing == .birdhouse ? 0.7 : 0.6) { [weak self, weak entity] in
+                guard let self, let entity else { return }
+                if thing == .sled {
+                    self.rideSled(entity)
+                } else if let back = self.things.remove(entity) {
+                    // Lykta og fuglekassa går tilbake i ryggsekken.
+                    self.backpack.add(back)
                     self.sound.play(.pop)
                     self.sound.buzz()
                 }
             }
-        }
-        for item in things.placed {
-            let entity = item.entity
-            let height: Float = item.thing == .birdhouse ? 1.1 : 0.2
-            consider(entity.position + [0, height, 0], radius: 70) { [weak self, weak entity] in
-                guard let self, let entity else { return }
-                self.goTo(entity.position, stopShort: item.thing == .birdhouse ? 0.7 : 0.6) { [weak self, weak entity] in
-                    guard let self, let entity else { return }
-                    if item.thing == .sled {
-                        self.rideSled(entity)
-                    } else if let thing = self.things.remove(entity) {
-                        // Lykta og fuglekassa går tilbake i ryggsekken.
-                        self.backpack.add(thing)
-                        self.sound.play(.pop)
-                        self.sound.buzz()
-                    }
-                }
+        case .block?:
+            if carrying.isEmpty {
+                chopTree = nil
+                walkThenChop(to: chopSpot(), facing: blockPosition)
+            } else {
+                goTo(blockPosition, stopShort: 1.1) { [weak self] in self?.dropAllAtBlock() }
             }
-        }
-        if !sky.fireLit {
-            consider(sky.firePosition + [0, 0.2, 0], radius: 70) { [weak self] in
-                guard let self else { return }
-                self.goTo(self.sky.firePosition, stopShort: 1.0) { [weak self] in self?.lightFire() }
+        case .fire?:
+            if sky.fireLit { return }
+            goTo(sky.firePosition, stopShort: 1.0) { [weak self] in self?.lightFire() }
+        case .lowe?:
+            if riding != nil {
+                stepOffSled()
+            } else if !carrying.isEmpty {
+                putDownTop()
             }
+        case .ground(let g)?:
+            // Bærer Lowe noe, går han dit og legger den øverste stokken der. Ellers hugger han.
+            if !carrying.isEmpty && flatDistance(g, position) < 9 {
+                goTo(g, stopShort: 0.55) { [weak self] in self?.putDown(at: g) }
+            } else {
+                chopPressed()
+            }
+        case nil:
+            chopPressed()
         }
-        guard let best else { return false }
-        best.action()
-        return true
-    }
-
-    // MARK: Hånd-knappen
-
-    /// Det Lowe kan ta eller gjøre der han står, uten å trykke på selve tingen.
-    /// Dette avhenger bare av hvor Lowe står, så det virker alltid.
-    private func currentHand() -> Hand? {
-        if riding != nil { return .stepOff }
-        if !carrying.isEmpty && flatDistance(position, blockPosition) < 2.3 { return .dropAtBlock }
-        if carrying.count < carryLimit, let log = woods.nearestLooseLog(to: position, within: 1.8) { return .pickLog(log) }
-        if let stone = nearestStone(within: 1.6) { return .pickStone(stone) }
-        if let item = things.placed.min(by: { flatDistance($0.entity.position, position) < flatDistance($1.entity.position, position) }),
-           flatDistance(item.entity.position, position) < 1.5 {
-            return .thing(item.entity, item.thing)
-        }
-        if !sky.fireLit && flatDistance(position, sky.firePosition) < 1.9 { return .lightFire }
-        if !carrying.isEmpty { return .putDown }
-        return nil
     }
 
     private func nearestStone(within reach: Float) -> Entity? {
         guard let stone = woods.allStones.min(by: { flatDistance($0.position, position) < flatDistance($1.position, position) }),
               flatDistance(stone.position, position) < reach else { return nil }
         return stone
-    }
-
-    /// Viser riktig bilde på hånd-knappen, eller skjuler den.
-    private func updateHand() {
-        let hand = buildMode || backpackView != nil ? nil : currentHand()
-        let key = hand?.key ?? ""
-        guard key != handKey else { return }
-        handKey = key
-        guard let hand else {
-            controls.setHand(nil)
-            return
-        }
-        let size: CGFloat = 64
-        switch hand {
-        case .stepOff: controls.setHand(Icons.sled(size), arrowUp: false)
-        case .dropAtBlock, .putDown: controls.setHand(Icons.wood(size), arrowUp: false)
-        case .pickLog: controls.setHand(Icons.wood(size), arrowUp: true)
-        case .pickStone: controls.setHand(Icons.stone(size), arrowUp: true)
-        case .thing(_, let t): controls.setHand(Icons.thing(t, size: size), arrowUp: t != .sled)
-        case .lightFire: controls.setHand(Icons.fire(size), arrowUp: nil)
-        }
-    }
-
-    private func handPressed() {
-        guard !buildMode, let hand = currentHand() else { return }
-        switch hand {
-        case .stepOff:
-            stepOffSled()
-        case .dropAtBlock:
-            yawGoal = facing(blockPosition)
-            dropAllAtBlock()
-        case .pickLog(let log):
-            pickUp(log)
-        case .pickStone(let stone):
-            collectStone(stone)
-        case .thing(let entity, let thing):
-            yawGoal = facing(entity.position)
-            if thing == .sled {
-                rideSled(entity)
-            } else if let back = things.remove(entity) {
-                backpack.add(back)
-                sound.play(.pop)
-                sound.buzz()
-            }
-        case .lightFire:
-            yawGoal = facing(sky.firePosition)
-            lightFire()
-        case .putDown:
-            putDownTop()
-        }
-        updateHand()
     }
 
     private func collectStone(_ stone: Entity) {
@@ -534,24 +499,6 @@ final class Forest: NSObject {
         backpack.stones += 1
         sound.play(.pop)
         sound.buzz()
-    }
-
-    /// Bommet trykket, men står Lowe rett ved en stokk eller en stein, tar han den opp likevel.
-    private func pickUpNearby() -> Bool {
-        if carrying.count < carryLimit, let log = woods.nearestLooseLog(to: position, within: 1.6) {
-            pickUp(log)
-            return true
-        }
-        if let stone = woods.allStones.min(by: { flatDistance($0.position, position) < flatDistance($1.position, position) }),
-           flatDistance(stone.position, position) < 1.4 {
-            yawGoal = facing(stone.position)
-            woods.takeStone(stone)
-            backpack.stones += 1
-            sound.play(.pop)
-            sound.buzz()
-            return true
-        }
-        return false
     }
 
     // MARK: Ryggsekken og tingene
@@ -699,6 +646,19 @@ final class Forest: NSObject {
         sound.buzz()
     }
 
+    /// Legger den øverste stokken ned i snøen der fingeren pekte.
+    private func putDown(at g: SIMD3<Float>) {
+        guard let log = carrying.popLast() else { return }
+        world.addChild(log)
+        let spot = SIMD3<Float>(g.x, 0, g.z)
+        log.position = spot + [0, builder.groundHeight(at: spot, footY: footY + 0.1) + 0.17, 0]
+        log.orientation = rotY(yaw)
+        log.scale = [1, 1, 1]
+        woods.putDown(log)
+        sound.play(.land, volume: 0.6)
+        sound.buzz()
+    }
+
     /// Legger den øverste stokken ned foran seg.
     private func putDownTop() {
         guard let log = carrying.popLast() else { return }
@@ -718,25 +678,6 @@ final class Forest: NSObject {
         sound.play(.whoosh)
         sound.buzz(strong: true)
         cheerTime = 0
-    }
-
-    /// Hvor på skjermen et punkt i skogen havner, eller nil om det er bak kameraet.
-    private func screenPoint(of p: SIMD3<Float>) -> CGPoint? {
-        // ARView vet selv hvordan kameraet tegner, så det spørres først.
-        if let view {
-            let v = camera.orientation(relativeTo: nil).inverse.act(p - camera.position(relativeTo: nil))
-            guard v.z < -0.1 else { return nil }
-            if let point = view.project(p) { return controls.convert(point, from: view) }
-        }
-        let size = controls.bounds.size
-        guard size.width > 0, size.height > 0 else { return nil }
-        let v = camera.orientation(relativeTo: nil).inverse.act(p - camera.position(relativeTo: nil))
-        guard v.z < -0.1 else { return nil }
-        let tanHalf = tan(camera.camera.fieldOfViewInDegrees * .pi / 360)
-        let aspect = Float(size.width / size.height)
-        let x = v.x / -v.z / (tanHalf * aspect)
-        let y = v.y / -v.z / tanHalf
-        return CGPoint(x: CGFloat((x + 1) / 2) * size.width, y: CGFloat((1 - y) / 2) * size.height)
     }
 
     private func walkThenChop(to spot: SIMD3<Float>, facing point: SIMD3<Float>) {
@@ -1140,7 +1081,6 @@ final class Forest: NSObject {
         woods.update(dt, lowe: position, camera: camera.position(relativeTo: nil))
         // Går Lowe rett over en stein, plukker han den opp av seg selv, som konglene.
         if footY < 0.3, let stone = nearestStone(within: 0.55) { collectStone(stone) }
-        updateHand()
         sky.update(dt, around: position)
         things.update(dt, daylight: sky.daylight)
         builder.showGhost(at: buildMode ? buildCell() : nil)

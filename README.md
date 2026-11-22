@@ -14,22 +14,22 @@ Spillet kjører i liggende format på både iPhone og iPad. Lyden følger lydlø
 
 ## Slik styrer man
 
-- Tommelen på venstre halvdel av skjermen er en spak: dra, så går Lowe den veien.
-- Dra på høyre halvdel for å snu kameraet rundt Lowe.
-- Den store turkise knappen (eller et kort trykk til høyre som ikke treffer noe) hugger. Står han nær stabben, går han bort og hugger kubben. Tre hogg deler den.
+- Spaken står fast nede til venstre: dra den, så går Lowe den veien.
+- Dra hvor som helst ellers på skjermen for å snu kameraet rundt Lowe.
+- Den store turkise knappen hugger. Står han nær stabben, går han bort og hugger kubben. Tre hogg deler den.
 - Den hvite knappen med pil hopper.
 - Står Lowe ved et grantre, hugger øksa i treet. Fire hogg, så faller det, og stokken blir liggende i snøen.
   Stubben blir stående, og etter en stund vokser et nytt tre opp.
-- **Den gule hånd-knappen** dukker opp over hoppeknappen når Lowe står ved noe han kan ta eller gjøre noe med.
-  Den viser et bilde av tingen, med en pil opp (ta) eller ned (legg fra seg):
-  stokk, stein, lykt, fuglekasse, akebrett (stå på / gå av), stabben (legg stokkene der), bålplassen (tenn bål),
-  og ellers legg fra deg den øverste stokken. Dette avhenger bare av hvor Lowe står, så det virker alltid.
+- **Trykk på tingen** for å bruke den, som i Minecraft. Lowe går bort til den hvis den er et stykke unna.
+  Rundt hver ting ligger en stor, usynlig boks, og treffer man bare snøen, velges den nærmeste tingen innen en meter.
   Går Lowe rett over en stein, plukker han den opp av seg selv.
-- I tillegg kan man trykke på selve tingen, som i Minecraft. Lowe går bort til den hvis den er et stykke unna.
   - Trykk på en stokk, så løfter Lowe den opp på skuldrene. Han kan bære opptil tre stokker,
     og går litt saktere jo flere han bærer.
   - Trykk på stabben, så legges alle stokkene han bærer i køen der.
-  - Trykk på Lowe selv, så legger han fra seg den øverste stokken.
+  - Trykk i snøen mens han bærer, så går han dit og legger den øverste stokken der.
+  - Trykk på Lowe selv, så legger han fra seg den øverste stokken (eller går av akebrettet).
+  - Trykk på stabben uten stokker, så hugger han kubben. Trykk på bålplassen, så tenner han bål.
+  - Et trykk i snøen når han ikke bærer noe, hugger.
 - Skogen er stor, med stier ut fra lysningen. Ti kongler ligger gjemt rundt omkring, og raden med små kongler
   oppe til venstre viser hvor mange Lowe har funnet: de brune er funnet, de lyse venter. Ekorn piler av gårde når han kommer nær, og det snør.
 - Vedstykkene flyr til stabelen. Ved stabelen venter et dyr fra skogen.
