@@ -2,8 +2,8 @@ import Combine
 import RealityKit
 import UIKit
 
-/// Skogen i 3D. Trykk på snøen, så går Lowe dit. Trykk på hoggestabben, så går han bort
-/// og hugger. Tre hogg deler kubben, og vedstykkene flyr til stabelen.
+/// Skogen i 3D. Spaken til venstre får Lowe til å gå, dra til høyre snur kameraet,
+/// og knappene hugger og hopper. Tre hogg deler kubben, og vedstykkene flyr til stabelen.
 @MainActor
 final class Forest: NSObject {
     private weak var view: ARView?
@@ -11,7 +11,7 @@ final class Forest: NSObject {
     private let camera = PerspectiveCamera()
     private let lowe = LoweFigure()
     private let sound = Sound()
-    private var marker: ModelEntity?
+    private let controls = ControlsView()
     private var updateSubscription: Cancellable?
 
     private let blockPosition = SIMD3<Float>(0, 0, 0)
@@ -29,10 +29,8 @@ final class Forest: NSObject {
     private var yawGoal: Float = .pi
     private var target: SIMD3<Float>?
     private var chopWhenArrived = false
-    /// Hvor fingeren holdes nå, når Lowe følger den.
-    private var holdLocation: CGPoint?
-    private var holdStartLocation: CGPoint = .zero
-    private var holdStartTime: Float = 0
+    private var jumpHeight: Float = 0
+    private var jumpSpeed: Float = 0
     private var walkPhase: Float = 0
     private var walkAmount: Float = 0
     private var chopTime: Float?
@@ -51,7 +49,10 @@ final class Forest: NSObject {
     private var timers: [(time: Float, action: () -> Void)] = []
     private var time: Float = 0
     private var cameraFocus = SIMD3<Float>(0, 0.6, 2.4)
-    private let cameraOffset = SIMD3<Float>(0, 4.4, 6.0)
+    /// Kameraet går i en kule rundt Lowe. Vinkel 0 betyr at det står bak ham mot +z.
+    private var cameraYaw: Float = 0
+    private var cameraPitch: Float = 0.5
+    private let cameraDistance: Float = 6.4
 
     /// Noe som flyr i en bue: flis, vedstykker, konfetti og kubber som faller ned.
     private struct Flyer {
@@ -72,11 +73,12 @@ final class Forest: NSObject {
         view.scene.addAnchor(world)
         buildScene()
 
-        // Ett trykk som starter med en gang, og som følger fingeren så lenge den holdes nede.
-        let press = UILongPressGestureRecognizer(target: self, action: #selector(pressed(_:)))
-        press.minimumPressDuration = 0
-        press.allowableMovement = .greatestFiniteMagnitude
-        view.addGestureRecognizer(press)
+        controls.frame = view.bounds
+        controls.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(controls)
+        controls.onLook = { [weak self] dx, dy in self?.look(dx: Float(dx), dy: Float(dy)) }
+        controls.onChop = { [weak self] in self?.chopPressed() }
+        controls.onJump = { [weak self] in self?.jump() }
 
         updateSubscription = view.scene.subscribe(to: SceneEvents.Update.self) { [weak self] event in
             let dt = Float(min(event.deltaTime, 1.0 / 20))
@@ -133,91 +135,38 @@ final class Forest: NSObject {
             Make.part(Make.box(1.4, 0.08, 0.14, r: 0.02), Colors.trunk, at: pilePosition + [0, 0.04, z], in: world)
         }
 
-        let ringMarker = Make.part(Make.cylinder(0.015, 0.22), Colors.turquoise, in: world)
-        ringMarker.isEnabled = false
-        marker = ringMarker
-
         lowe.root.position = position
         world.addChild(lowe.root)
         updateCamera(dt: 1)
     }
 
-    // MARK: Trykk
+    // MARK: Styring
 
-    /// Hold fingeren nede, så går Lowe mot den og stopper når du slipper.
-    /// Et kort trykk får ham til å gå dit. Trykk på stabben, så hugger han.
-    @objc private func pressed(_ gesture: UILongPressGestureRecognizer) {
-        guard let view else { return }
-        let location = gesture.location(in: view)
-        switch gesture.state {
-        case .began:
-            holdStartLocation = location
-            holdStartTime = time
-            holdLocation = nil
-            guard let p = groundPoint(location, in: view) else { return }
-            if flatDistance(p, blockPosition) < 0.9 {
-                chopPressed()
-                return
-            }
-            holdLocation = location
-            walk(to: keepClear(p), chop: false)
-        case .changed:
-            if holdLocation != nil { holdLocation = location }
-        case .ended, .cancelled, .failed:
-            guard holdLocation != nil else { return }
-            holdLocation = nil
-            let moved = hypot(location.x - holdStartLocation.x, location.y - holdStartLocation.y)
-            let quickTap = time - holdStartTime < 0.3 && moved < 24
-            if quickTap {
-                marker?.isEnabled = target != nil
-            } else {
-                target = nil
-                marker?.isEnabled = false
-            }
-        default:
-            break
-        }
+    private func look(dx: Float, dy: Float) {
+        cameraYaw -= dx * 0.009
+        cameraPitch = min(1.15, max(0.15, cameraPitch + dy * 0.005))
     }
 
+    private func jump() {
+        guard jumpHeight <= 0.001 else { return }
+        jumpSpeed = 4.2
+        sound.play(.whoosh, volume: 0.4)
+    }
+
+    /// Øksa svinges alltid. Står Lowe nær stabben, tar han et steg bort til den og hugger kubben.
     private func chopPressed() {
-        let spot = chopSpot()
-        if target == nil && flatDistance(position, spot) < 0.12 {
-            yawGoal = facingBlock()
-            startChop()
+        guard jumpHeight <= 0.001 else { return }
+        if flatDistance(position, blockPosition) < 1.7 {
+            let spot = chopSpot()
+            if flatDistance(position, spot) < 0.12 {
+                yawGoal = facingBlock()
+                startChop()
+            } else {
+                target = spot
+                chopWhenArrived = true
+            }
         } else {
-            walk(to: spot, chop: true)
-        }
-    }
-
-    /// Mens fingeren holdes nede, flyttes målet dit fingeren peker, også når kameraet glir etter.
-    private func followFinger() {
-        guard let location = holdLocation, let view, let p = groundPoint(location, in: view) else { return }
-        walk(to: keepClear(p), chop: false)
-    }
-
-    /// Finner punktet på snøen under fingeren, ut fra kameraets plassering og synsvinkel.
-    private func groundPoint(_ point: CGPoint, in view: ARView) -> SIMD3<Float>? {
-        let size = view.bounds.size
-        guard size.width > 0, size.height > 0 else { return nil }
-        let aspect = Float(size.width / size.height)
-        let tanHalf = tan(camera.camera.fieldOfViewInDegrees * .pi / 360)
-        let nx = Float(point.x / size.width) * 2 - 1
-        let ny = 1 - Float(point.y / size.height) * 2
-        let local = SIMD3<Float>(nx * tanHalf * aspect, ny * tanHalf, -1)
-        let origin = camera.position(relativeTo: nil)
-        let direction = camera.orientation(relativeTo: nil).act(local)
-        guard direction.y < -0.01 else { return nil }
-        let t = -origin.y / direction.y
-        return origin + direction * t
-    }
-
-    private func walk(to point: SIMD3<Float>, chop: Bool) {
-        target = SIMD3(point.x, 0, point.z)
-        chopWhenArrived = chop
-        chopQueued = false
-        if let marker {
-            marker.position = SIMD3(point.x, 0.01, point.z)
-            marker.isEnabled = holdLocation == nil
+            startChop()
         }
     }
 
@@ -405,7 +354,6 @@ final class Forest: NSObject {
     private func tick(_ dt: Float) {
         time += dt
         runTimers()
-        followFinger()
         moveLowe(dt)
 
         var chop: Float?
@@ -433,53 +381,73 @@ final class Forest: NSObject {
             cheer = cheerTime
         }
 
-        lowe.root.position = position
+        lowe.root.position = position + [0, jumpHeight, 0]
         lowe.root.orientation = rotY(yaw)
         lowe.pose(walkPhase: walkPhase, walk: walkAmount, chop: chop, cheer: cheer, time: time)
 
         updateFlyers(dt)
         updateCamera(dt: dt)
-        if let marker, marker.isEnabled {
-            let s = 1 + 0.15 * sin(time * 8)
-            marker.scale = [s, 1, s]
-        }
     }
 
     private func moveLowe(_ dt: Float) {
-        var moving: Float = 0
-        if let goal = target {
+        var speed: Float = 0
+        let stick = controls.move
+        let push = min(1, simd_length(stick))
+        if push > 0.12 {
+            // Spaken styrer ut fra hvor kameraet ser: opp på spaken er bort fra kameraet.
+            target = nil
+            chopWhenArrived = false
+            let forward = SIMD2<Float>(-sin(cameraYaw), -cos(cameraYaw))
+            let right = SIMD2<Float>(cos(cameraYaw), -sin(cameraYaw))
+            let dir = simd_normalize(right * stick.x + forward * stick.y)
+            speed = walkSpeed * push
+            position += SIMD3(dir.x, 0, dir.y) * speed * dt
+            position = keepClear(position)
+            yawGoal = atan2(dir.x, dir.y)
+        } else if let goal = target {
             var delta = goal - position
             delta.y = 0
             let distance = simd_length(delta)
-            if holdLocation != nil && distance < 0.25 {
-                // Fingeren er rett ved Lowe: han blir stående og venter.
-            } else if distance < 0.03 {
+            if distance < 0.03 {
                 position = goal
                 target = nil
-                marker?.isEnabled = false
                 if chopWhenArrived {
                     chopWhenArrived = false
                     yawGoal = facingBlock()
                     startChop()
                 }
             } else {
+                speed = walkSpeed
                 position += delta / distance * min(distance, walkSpeed * dt)
                 yawGoal = atan2(delta.x, delta.z)
-                moving = 1
             }
         }
         var turn = yawGoal - yaw
         turn = atan2(sin(turn), cos(turn))
         yaw += turn * min(1, dt * 12)
 
+        if jumpHeight > 0 || jumpSpeed > 0 {
+            jumpSpeed -= 12 * dt
+            jumpHeight += jumpSpeed * dt
+            if jumpHeight <= 0 {
+                jumpHeight = 0
+                jumpSpeed = 0
+                sound.play(.land, volume: 0.35)
+            }
+        }
+
+        let moving = min(1, speed / walkSpeed) * (jumpHeight > 0 ? 0.3 : 1)
         walkAmount += (moving - walkAmount) * min(1, dt * 10)
         walkPhase += dt * 10 * walkAmount
     }
 
     private func updateCamera(dt: Float) {
-        let focus = position + [0, 0.6, 0]
-        cameraFocus += (focus - cameraFocus) * min(1, dt * 3)
-        camera.look(at: cameraFocus, from: cameraFocus + cameraOffset, relativeTo: nil)
+        let focus = position + [0, 0.7, 0]
+        cameraFocus += (focus - cameraFocus) * min(1, dt * 5)
+        let offset = SIMD3<Float>(sin(cameraYaw) * cos(cameraPitch),
+                                  sin(cameraPitch),
+                                  cos(cameraYaw) * cos(cameraPitch)) * cameraDistance
+        camera.look(at: cameraFocus, from: cameraFocus + offset, relativeTo: nil)
     }
 
     private func launch(_ entity: Entity, velocity: SIMD3<Float>, gravity: Float, duration: Float,
