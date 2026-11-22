@@ -5,7 +5,7 @@ import UIKit
 @MainActor
 final class Feedback {
     enum Sound: String, CaseIterable {
-        case chop, split, stack, land, whoosh, cheer
+        case chop, split, stack, land, whoosh, cheer, squeak, pop
     }
 
     private let actions: [Sound: SKAction]
@@ -14,6 +14,8 @@ final class Feedback {
     private let light = UIImpactFeedbackGenerator(style: .light)
     private let notify = UINotificationFeedbackGenerator()
     weak var scene: SKScene?
+    /// Lyden kan slås av i foreldremenyen. Vibrasjon er fortsatt på.
+    var muted = false
 
     init() {
         var map: [Sound: SKAction] = [:]
@@ -26,7 +28,7 @@ final class Feedback {
     }
 
     func play(_ sound: Sound) {
-        guard let action = actions[sound] else { return }
+        guard !muted, let action = actions[sound] else { return }
         scene?.run(action)
     }
 

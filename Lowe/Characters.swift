@@ -1,9 +1,9 @@
 import SpriteKit
 
-// MARK: - Love
+// MARK: - Lowe
 
-/// Love med øksa. `swing` går fra 0 (øksa på skulderen) til 1 (øksa treffer kubben).
-final class LoveNode: SKNode {
+/// Lowe med øksa. `swing` går fra 0 (øksa på skulderen) til 1 (øksa treffer kubben).
+final class LoweNode: SKNode {
     private let farArmOutline = Shape.node(CGMutablePath(), stroke: Palette.ink, width: 24)
     private let farArm = Shape.node(CGMutablePath(), stroke: Palette.turquoise, width: 16)
     private let nearArmOutline = Shape.node(CGMutablePath(), stroke: Palette.ink, width: 24)
@@ -137,6 +137,7 @@ final class LoveNode: SKNode {
 /// En kubbe som står på hoggestabben. (0, 0) er midten av toppen.
 final class LogNode: SKNode {
     let hitsNeeded: Int
+    var isGiant: Bool { hitsNeeded >= 6 }
     var hits = 0
     let width: CGFloat
     private let height: CGFloat = 90
