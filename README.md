@@ -39,7 +39,8 @@ så former kan kopieres rett fra designet.
 `Lowe3D` er en egen liten app i samme prosjekt, for å kjenne på hvordan spillet blir i 3D.
 Velg skjemaet **Lowe3D** øverst i Xcode og kjør. Den trenger iOS 18.
 
-- Trykk på snøen, så går Lowe dit.
+- Hold fingeren på snøen, så går Lowe mot den. Slipp, så stopper han.
+- Et kort trykk på snøen får ham til å gå dit.
 - Trykk på hoggestabben, så går han bort og hugger. Tre hogg deler kubben.
 - Vedstykkene flyr til stabelen. Når den er full, blir det konfetti og den tømmes.
 

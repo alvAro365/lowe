@@ -29,6 +29,10 @@ final class Forest: NSObject {
     private var yawGoal: Float = .pi
     private var target: SIMD3<Float>?
     private var chopWhenArrived = false
+    /// Hvor fingeren holdes nå, når Lowe følger den.
+    private var holdLocation: CGPoint?
+    private var holdStartLocation: CGPoint = .zero
+    private var holdStartTime: Float = 0
     private var walkPhase: Float = 0
     private var walkAmount: Float = 0
     private var chopTime: Float?
@@ -68,8 +72,11 @@ final class Forest: NSObject {
         view.scene.addAnchor(world)
         buildScene()
 
-        let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
-        view.addGestureRecognizer(tap)
+        // Ett trykk som starter med en gang, og som følger fingeren så lenge den holdes nede.
+        let press = UILongPressGestureRecognizer(target: self, action: #selector(pressed(_:)))
+        press.minimumPressDuration = 0
+        press.allowableMovement = .greatestFiniteMagnitude
+        view.addGestureRecognizer(press)
 
         updateSubscription = view.scene.subscribe(to: SceneEvents.Update.self) { [weak self] event in
             let dt = Float(min(event.deltaTime, 1.0 / 20))
@@ -137,26 +144,71 @@ final class Forest: NSObject {
 
     // MARK: Trykk
 
-    @objc private func tapped(_ gesture: UITapGestureRecognizer) {
-        guard let view, let p = groundPoint(gesture.location(in: view), in: view) else { return }
-        if flatDistance(p, blockPosition) < 0.9 {
-            let spot = chopSpot()
-            if target == nil && flatDistance(position, spot) < 0.12 {
-                yawGoal = facingBlock()
-                startChop()
-            } else {
-                walk(to: spot, chop: true)
+    /// Hold fingeren nede, så går Lowe mot den og stopper når du slipper.
+    /// Et kort trykk får ham til å gå dit. Trykk på stabben, så hugger han.
+    @objc private func pressed(_ gesture: UILongPressGestureRecognizer) {
+        guard let view else { return }
+        let location = gesture.location(in: view)
+        switch gesture.state {
+        case .began:
+            holdStartLocation = location
+            holdStartTime = time
+            holdLocation = nil
+            guard let p = groundPoint(location, in: view) else { return }
+            if flatDistance(p, blockPosition) < 0.9 {
+                chopPressed()
+                return
             }
-            return
+            holdLocation = location
+            walk(to: keepClear(p), chop: false)
+        case .changed:
+            if holdLocation != nil { holdLocation = location }
+        case .ended, .cancelled, .failed:
+            guard holdLocation != nil else { return }
+            holdLocation = nil
+            let moved = hypot(location.x - holdStartLocation.x, location.y - holdStartLocation.y)
+            let quickTap = time - holdStartTime < 0.3 && moved < 24
+            if quickTap {
+                marker?.isEnabled = target != nil
+            } else {
+                target = nil
+                marker?.isEnabled = false
+            }
+        default:
+            break
         }
+    }
+
+    private func chopPressed() {
+        let spot = chopSpot()
+        if target == nil && flatDistance(position, spot) < 0.12 {
+            yawGoal = facingBlock()
+            startChop()
+        } else {
+            walk(to: spot, chop: true)
+        }
+    }
+
+    /// Mens fingeren holdes nede, flyttes målet dit fingeren peker, også når kameraet glir etter.
+    private func followFinger() {
+        guard let location = holdLocation, let view, let p = groundPoint(location, in: view) else { return }
         walk(to: keepClear(p), chop: false)
     }
 
-    /// Finner punktet på snøen under fingeren.
+    /// Finner punktet på snøen under fingeren, ut fra kameraets plassering og synsvinkel.
     private func groundPoint(_ point: CGPoint, in view: ARView) -> SIMD3<Float>? {
-        guard let ray = view.ray(through: point), ray.direction.y < -0.01 else { return nil }
-        let t = -ray.origin.y / ray.direction.y
-        return ray.origin + ray.direction * t
+        let size = view.bounds.size
+        guard size.width > 0, size.height > 0 else { return nil }
+        let aspect = Float(size.width / size.height)
+        let tanHalf = tan(camera.camera.fieldOfViewInDegrees * .pi / 360)
+        let nx = Float(point.x / size.width) * 2 - 1
+        let ny = 1 - Float(point.y / size.height) * 2
+        let local = SIMD3<Float>(nx * tanHalf * aspect, ny * tanHalf, -1)
+        let origin = camera.position(relativeTo: nil)
+        let direction = camera.orientation(relativeTo: nil).act(local)
+        guard direction.y < -0.01 else { return nil }
+        let t = -origin.y / direction.y
+        return origin + direction * t
     }
 
     private func walk(to point: SIMD3<Float>, chop: Bool) {
@@ -165,7 +217,7 @@ final class Forest: NSObject {
         chopQueued = false
         if let marker {
             marker.position = SIMD3(point.x, 0.01, point.z)
-            marker.isEnabled = true
+            marker.isEnabled = holdLocation == nil
         }
     }
 
@@ -353,6 +405,7 @@ final class Forest: NSObject {
     private func tick(_ dt: Float) {
         time += dt
         runTimers()
+        followFinger()
         moveLowe(dt)
 
         var chop: Float?
@@ -393,11 +446,14 @@ final class Forest: NSObject {
     }
 
     private func moveLowe(_ dt: Float) {
+        var moving: Float = 0
         if let goal = target {
             var delta = goal - position
             delta.y = 0
             let distance = simd_length(delta)
-            if distance < 0.03 {
+            if holdLocation != nil && distance < 0.25 {
+                // Fingeren er rett ved Lowe: han blir stående og venter.
+            } else if distance < 0.03 {
                 position = goal
                 target = nil
                 marker?.isEnabled = false
@@ -409,13 +465,13 @@ final class Forest: NSObject {
             } else {
                 position += delta / distance * min(distance, walkSpeed * dt)
                 yawGoal = atan2(delta.x, delta.z)
+                moving = 1
             }
         }
         var turn = yawGoal - yaw
         turn = atan2(sin(turn), cos(turn))
         yaw += turn * min(1, dt * 12)
 
-        let moving: Float = target == nil ? 0 : 1
         walkAmount += (moving - walkAmount) * min(1, dt * 10)
         walkPhase += dt * 10 * walkAmount
     }
