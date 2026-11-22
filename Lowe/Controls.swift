@@ -3,7 +3,8 @@ import UIKit
 /// Styring som i mange 3D-spill på mobil:
 /// venstre halvdel er en spak som dukker opp der tommelen trykker,
 /// høyre halvdel drar kameraet rundt, og store knapper hugger, hopper og slår på byggingen.
-/// Et kort trykk på høyre halvdel hugger også (eller setter en kloss når byggingen er på).
+/// Et kort trykk på høyre halvdel hugger også. Når byggingen er på, setter et trykk en kloss der fingeren peker,
+/// og å holde fingeren på en kloss tar den bort, som i Minecraft. En rad nederst velger hvilken kloss.
 final class ControlsView: UIView {
     /// Hvor spaken peker. x er mot høyre, y er framover. Lengden går fra 0 til 1.
     private(set) var move = SIMD2<Float>(0, 0)
@@ -11,6 +12,11 @@ final class ControlsView: UIView {
     var onChop: (() -> Void)?
     var onJump: (() -> Void)?
     var onBuild: (() -> Void)?
+    /// Et kort trykk på høyre halvdel, med punktet på skjermen.
+    var onTap: ((CGPoint) -> Void)?
+    /// Fingeren holdes stille på høyre halvdel. Kommer igjen og igjen så lenge fingeren blir liggende.
+    var onHold: ((CGPoint) -> Void)?
+    var onPickBlock: ((Int) -> Void)?
 
     private let stickRadius: CGFloat = 64
     private let stickBase = UIView()
@@ -33,6 +39,14 @@ final class ControlsView: UIView {
     private var lookLast: CGPoint = .zero
     private var lookTravel: CGFloat = 0
     private var lookStartTime: TimeInterval = 0
+    private var holdTimer: Timer?
+    private var holdFired = false
+    private var holdStart = Date()
+    private var holdLastFire: Date?
+    private var buildOn = false
+    /// Klossene å velge mellom, nederst på midten når byggingen er på.
+    private var hotbar: [UIView] = []
+    private var selectedBlock = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -136,14 +150,46 @@ final class ControlsView: UIView {
 
     /// I byggemodus viser den store knappen en kloss i stedet for øksa.
     func setBuildMode(_ on: Bool) {
+        buildOn = on
+        hotbar.forEach { $0.isHidden = !on }
         axeLayer.isHidden = on
         blockLayer.isHidden = !on
         chopButton.backgroundColor = on ? Colors.sun : Colors.turquoise
         buildButton.backgroundColor = on ? Colors.turquoise : .white
     }
 
+    /// Lager raden med klosser å velge mellom. Hver kloss er gitt med farge på toppen, venstre og høyre side.
+    func setBlockChoices(_ choices: [(top: UIColor, left: UIColor, right: UIColor)], selected: Int) {
+        hotbar.forEach { $0.removeFromSuperview() }
+        hotbar = choices.map { colors in
+            let slot = UIView(frame: CGRect(x: 0, y: 0, width: 58, height: 58))
+            slot.layer.cornerRadius = 14
+            slot.backgroundColor = UIColor(white: 0, alpha: 0.35)
+            slot.layer.borderColor = UIColor(white: 1, alpha: 0.6).cgColor
+            slot.layer.borderWidth = 3
+            slot.isUserInteractionEnabled = false
+            slot.layer.addSublayer(ControlsView.blockIcon(in: 58, plus: false, top: colors.top, left: colors.left, right: colors.right))
+            slot.isHidden = !buildOn
+            addSubview(slot)
+            return slot
+        }
+        selectBlock(selected)
+        setNeedsLayout()
+    }
+
+    private func selectBlock(_ index: Int) {
+        selectedBlock = index
+        for (i, slot) in hotbar.enumerated() {
+            let on = i == index
+            slot.layer.borderColor = on ? Colors.turquoise.cgColor : UIColor(white: 1, alpha: 0.6).cgColor
+            slot.layer.borderWidth = on ? 6 : 3
+            slot.transform = on ? CGAffineTransform(scaleX: 1.15, y: 1.15) : .identity
+        }
+    }
+
     /// En trekloss sett litt ovenfra, med et pluss når den betyr «sett en kloss her».
-    private static func blockIcon(in size: CGFloat, plus: Bool) -> CALayer {
+    private static func blockIcon(in size: CGFloat, plus: Bool, top topColor: UIColor = Colors.wood,
+                                  left leftColor: UIColor = Colors.barkLight, right rightColor: UIColor = Colors.bark) -> CALayer {
         let layer = CALayer()
         layer.frame = CGRect(x: 0, y: 0, width: size, height: size)
         let s = size * 0.2
@@ -165,9 +211,9 @@ final class ControlsView: UIView {
         let left = CGPoint(x: c.x - s, y: c.y - s * 0.55)
         let right = CGPoint(x: c.x + s, y: c.y - s * 0.55)
         let mid = CGPoint(x: c.x, y: c.y)
-        face([top, right, mid, left], Colors.wood)
-        face([left, mid, CGPoint(x: mid.x, y: mid.y + s * 1.1), CGPoint(x: left.x, y: left.y + s * 1.1)], Colors.barkLight)
-        face([mid, right, CGPoint(x: right.x, y: right.y + s * 1.1), CGPoint(x: mid.x, y: mid.y + s * 1.1)], Colors.bark)
+        face([top, right, mid, left], topColor)
+        face([left, mid, CGPoint(x: mid.x, y: mid.y + s * 1.1), CGPoint(x: left.x, y: left.y + s * 1.1)], leftColor)
+        face([mid, right, CGPoint(x: right.x, y: right.y + s * 1.1), CGPoint(x: mid.x, y: mid.y + s * 1.1)], rightColor)
         if plus {
             let p = CAShapeLayer()
             let path = UIBezierPath()
@@ -296,6 +342,14 @@ final class ControlsView: UIView {
         buildButton.center = CGPoint(x: chopButton.center.x + 6, y: chopButton.center.y - 116)
         woodIcon.center = CGPoint(x: bounds.minX + inset.left + 36, y: bounds.minY + inset.top + 82)
         woodLabel.frame.origin = CGPoint(x: woodIcon.frame.maxX + 8, y: woodIcon.center.y - woodLabel.bounds.height / 2)
+        // Raden står mellom spaken og hoppeknappen.
+        let left = inset.left + 40 + stickRadius * 2 + 12
+        let right = jumpButton.frame.minX - 12
+        let slotGap = min(76, (right - left - 58) / CGFloat(max(1, hotbar.count - 1)))
+        let startX = (left + right) / 2 - CGFloat(hotbar.count - 1) * slotGap / 2
+        for (i, slot) in hotbar.enumerated() {
+            slot.center = CGPoint(x: startX + CGFloat(i) * slotGap, y: bounds.maxY - inset.bottom - 44)
+        }
         if stickTouch == nil { placeStickAtRest() }
     }
 
@@ -315,7 +369,10 @@ final class ControlsView: UIView {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
             let p = touch.location(in: self)
-            if hits(chopButton, p) {
+            if let i = hotbar.firstIndex(where: { !$0.isHidden && $0.frame.insetBy(dx: -6, dy: -6).contains(p) }) {
+                selectBlock(i)
+                onPickBlock?(i)
+            } else if hits(chopButton, p) {
                 bounce(chopButton)
                 onChop?()
             } else if hits(jumpButton, p) {
@@ -337,6 +394,7 @@ final class ControlsView: UIView {
                 lookLast = p
                 lookTravel = 0
                 lookStartTime = touch.timestamp
+                startHold()
             }
         }
     }
@@ -359,6 +417,8 @@ final class ControlsView: UIView {
                 let dy = p.y - lookLast.y
                 lookLast = p
                 lookTravel += hypot(dx, dy)
+                if holdFired { continue }
+                if lookTravel >= 12 { stopHold() }
                 onLook?(dx, dy)
             }
         }
@@ -380,11 +440,41 @@ final class ControlsView: UIView {
                 UIView.animate(withDuration: 0.15) { self.placeStickAtRest() }
             } else if touch === lookTouch {
                 lookTouch = nil
-                if tapCounts && lookTravel < 12 && touch.timestamp - lookStartTime < 0.3 {
-                    onChop?()
+                let fired = holdFired
+                stopHold()
+                if tapCounts && !fired && lookTravel < 12 && touch.timestamp - lookStartTime < 0.35 {
+                    onTap?(touch.location(in: self))
                 }
             }
         }
+    }
+
+    /// Når byggingen er på og fingeren blir liggende stille, tas klossen under fingeren bort,
+    /// og så en til så lenge fingeren blir liggende.
+    private func startHold() {
+        stopHold()
+        guard buildOn else { return }
+        holdStart = Date()
+        holdLastFire = nil
+        holdTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.holdTick() }
+        }
+    }
+
+    private func holdTick() {
+        guard lookTouch != nil else { return }
+        let now = Date()
+        let since = now.timeIntervalSince(holdLastFire ?? holdStart)
+        guard since > 0.4 else { return }
+        holdLastFire = now
+        holdFired = true
+        onHold?(lookLast)
+    }
+
+    private func stopHold() {
+        holdTimer?.invalidate()
+        holdTimer = nil
+        holdFired = false
     }
 
     private func hits(_ button: UIView, _ p: CGPoint) -> Bool {
