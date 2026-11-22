@@ -39,15 +39,17 @@ så former kan kopieres rett fra designet.
 `Lowe3D` er en egen liten app i samme prosjekt, for å kjenne på hvordan spillet blir i 3D.
 Velg skjemaet **Lowe3D** øverst i Xcode og kjør. Den trenger iOS 18.
 
-- Hold fingeren på snøen, så går Lowe mot den. Slipp, så stopper han.
-- Et kort trykk på snøen får ham til å gå dit.
-- Trykk på hoggestabben, så går han bort og hugger. Tre hogg deler kubben.
+- Tommelen på venstre halvdel av skjermen er en spak: dra, så går Lowe den veien.
+- Dra på høyre halvdel for å snu kameraet rundt Lowe.
+- Den store turkise knappen (eller et kort trykk til høyre) hugger. Står han nær stabben, går han bort og hugger kubben. Tre hogg deler den.
+- Den hvite knappen med pil hopper.
 - Vedstykkene flyr til stabelen. Når den er full, blir det konfetti og den tømmes.
 
 | Fil | Hva den gjør |
 | --- | --- |
 | `Lowe3D/Lowe3DApp.swift` | Starter appen og viser 3D-skogen |
-| `Lowe3D/Forest.swift` | Skogen, kameraet, trykk, gåing, hugging og vedstabelen |
+| `Lowe3D/Forest.swift` | Skogen, kameraet, gåing, hopping, hugging og vedstabelen |
+| `Lowe3D/Controls.swift` | Spaken, kameradraget og knappene for å hugge og hoppe |
 | `Lowe3D/LoweFigure.swift` | Lowe bygd av enkle 3D-former, med gange og hogg |
 | `Lowe3D/Models.swift` | Farger og byggeklosser: trær, stabbe, kubbe og vedstykker |
 | `Lowe3D/Sound.swift` | Lyd og vibrasjon (samme lyder som 2D-spillet) |
