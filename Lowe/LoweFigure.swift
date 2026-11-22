@@ -58,7 +58,7 @@ final class LoweFigure {
     }
 
     /// `chop` og `cheer` går fra 0 til 1 mens de pågår.
-    func pose(walkPhase: Float, walk: Float, chop: Float?, cheer: Float?, time: Float) {
+    func pose(walkPhase: Float, walk: Float, chop: Float?, cheer: Float?, carrying: Bool = false, time: Float) {
         let swing = sin(walkPhase) * 0.6 * walk
         leftLeg.orientation = rotX(swing)
         rightLeg.orientation = rotX(-swing)
@@ -82,6 +82,8 @@ final class LoweFigure {
             leftRoll -= up * 0.3
             rightRoll += up * 0.3
         }
+        if carrying { leftRaise = 2.75; rightRaise = 2.75; leftRoll = 0.3; rightRoll = -0.3 }
+        axe.isEnabled = !carrying
         body.position.y = lift
         leftArm.orientation = rotX(-leftRaise) * rotZ(leftRoll)
         rightArm.orientation = rotX(-rightRaise) * rotZ(rightRoll)

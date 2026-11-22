@@ -8,8 +8,6 @@ final class Woods {
     /// Hvor langt fra midten Lowe kan gå.
     let radius: Float = 20
 
-    /// En stokk fra et felt tre har trillet fram til stabben.
-    var onLogArrived: ((Entity) -> Void)?
     /// Lowe fant en kongle. Gir hvor mange som er funnet og hvor mange det er.
     var onConeFound: ((Int, Int) -> Void)?
     /// Alle konglene er funnet.
@@ -17,7 +15,6 @@ final class Woods {
 
     private let world: Entity
     private let sound: Sound
-    private let logArrivalSpot: SIMD3<Float>
     private var time: Float = 0
     private var timers: [(time: Float, action: () -> Void)] = []
 
@@ -52,13 +49,6 @@ final class Woods {
         }
     }
 
-    private struct Roller {
-        let entity: Entity
-        let yaw: Float
-        var spin: Float = 0
-        let goal: SIMD3<Float>
-    }
-
     private struct Cone {
         let entity: Entity
         let base: SIMD3<Float>
@@ -87,7 +77,8 @@ final class Woods {
     }
 
     private var trees: [Tree] = []
-    private var rollers: [Roller] = []
+    /// Stokker fra felte trær som ligger på bakken og venter på at Lowe bærer dem.
+    private var looseLogs: [Entity] = []
     private var cones: [Cone] = []
     private var conesFound = 0
     private let coneCount = 10
@@ -104,10 +95,9 @@ final class Woods {
         [[-1.5, -2], [-4, -6], [-3, -11], [-6, -15], [-8, -19]],
     ]
 
-    init(world: Entity, sound: Sound, logArrivalSpot: SIMD3<Float>) {
+    init(world: Entity, sound: Sound) {
         self.world = world
         self.sound = sound
-        self.logArrivalSpot = logArrivalSpot
         buildPaths()
         plantTrees()
         placeCones()
@@ -262,23 +252,42 @@ final class Woods {
         return tree.position + [dir.x * distance, 0, dir.y * distance]
     }
 
+    /// Den nærmeste stokken på bakken innen `reach` meter.
+    func nearestLooseLog(to p: SIMD3<Float>, within reach: Float) -> Entity? {
+        looseLogs.min { flatDistance($0.position, p) < flatDistance($1.position, p) }
+            .flatMap { flatDistance($0.position, p) < reach ? $0 : nil }
+    }
+
+    /// Lowe løfter opp stokken.
+    func take(_ log: Entity) {
+        looseLogs.removeAll { $0 === log }
+    }
+
+    /// Lowe legger stokken fra seg på bakken.
+    func putDown(_ log: Entity) {
+        looseLogs.append(log)
+        puff(at: log.position, count: 4, spread: 0.3, up: 0.6)
+    }
+
     func canHit(tree index: Int, from p: SIMD3<Float>) -> Bool {
         index < trees.count && trees[index].isStanding && flatDistance(trees[index].position, p) < 1.3
     }
 
-    /// Et hogg i treet. Etter fire hogg faller det vekk fra Lowe.
-    func hit(tree index: Int, from p: SIMD3<Float>) {
+    /// Et hogg i treet. Etter fire hogg faller det vekk fra Lowe. Gir `true` når treet faller.
+    @discardableResult
+    func hit(tree index: Int, from p: SIMD3<Float>) -> Bool {
         let tree = trees[index]
-        guard tree.isStanding else { return }
+        guard tree.isStanding else { return false }
         tree.hits += 1
         tree.wobble = 0
         puff(at: tree.position + [0, 2.0 * tree.scale, 0], count: 6, spread: 0.8 * tree.scale, up: 0.2)
-        guard tree.hits >= hitsToFell else { return }
+        guard tree.hits >= hitsToFell else { return false }
         var dir = SIMD2<Float>(tree.position.x - p.x, tree.position.z - p.z)
         if simd_length(dir) < 0.01 { dir = [0, -1] }
         dir = simd_normalize(dir)
         tree.state = .falling(t: 0, axis: [dir.y, 0, -dir.x], dir: dir)
         sound.play(.split)
+        return true
     }
 
     // MARK: Hver ramme
@@ -291,7 +300,6 @@ final class Woods {
             due.forEach { $0.action() }
         }
         updateTrees(dt, lowe: lowe, camera: camera)
-        updateRollers(dt)
         updateCones(dt, lowe: lowe)
         updateSquirrels(dt, lowe: lowe)
         updatePuffs(dt)
@@ -354,14 +362,12 @@ final class Woods {
         tree.stump = stump
         tree.state = .gone(regrowAt: time + regrowDelay)
 
-        // Stokken trilles fra midt på det felte treet bort til stabben.
-        let start = tree.position + [dir.x * length * 0.45, 0.17, dir.y * length * 0.45]
+        // Stokken blir liggende der treet falt, langs stammen, til Lowe bærer den bort.
         let log = Make.lyingLog()
-        log.position = start
+        log.position = tree.position + [dir.x * length * 0.45, 0.17, dir.y * length * 0.45]
+        log.orientation = rotY(atan2(-dir.y, dir.x))
         world.addChild(log)
-        let goal = SIMD3<Float>(logArrivalSpot.x, 0.17, logArrivalSpot.z)
-        let travel = goal - start
-        rollers.append(Roller(entity: log, yaw: atan2(travel.x, travel.z), goal: goal))
+        looseLogs.append(log)
     }
 
     /// Trær mellom kameraet og Lowe blir gjennomsiktige, så Lowe aldri forsvinner bak et tre.
@@ -382,25 +388,6 @@ final class Woods {
             } else {
                 tree.entity.components.remove(OpacityComponent.self)
             }
-        }
-    }
-
-    private func updateRollers(_ dt: Float) {
-        for i in rollers.indices.reversed() {
-            var roller = rollers[i]
-            var delta = roller.goal - roller.entity.position
-            delta.y = 0
-            let distance = simd_length(delta)
-            let step = min(distance, 3.5 * dt)
-            if distance < 0.05 {
-                rollers.remove(at: i)
-                onLogArrived?(roller.entity)
-                continue
-            }
-            roller.entity.position += delta / distance * step
-            roller.spin += step / 0.17
-            roller.entity.orientation = rotY(roller.yaw) * rotX(roller.spin)
-            rollers[i] = roller
         }
     }
 

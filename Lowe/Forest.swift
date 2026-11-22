@@ -4,7 +4,8 @@ import UIKit
 
 /// Skogen i 3D. Spaken til venstre får Lowe til å gå, dra til høyre snur kameraet,
 /// og knappene hugger og hopper. Tre hogg deler kubben, og vedstykkene flyr til stabelen.
-/// Trærne rundt kan felles, og stokkene triller til stabben. Selve skogen ligger i Woods.
+/// Trærne rundt kan felles, og Lowe bærer stokkene bort til stabben. Selve skogen ligger i Woods,
+/// byggeklossene i Builder, og dag og natt i Sky.
 @MainActor
 final class Forest: NSObject {
     private weak var view: ARView?
@@ -15,6 +16,23 @@ final class Forest: NSObject {
     private let controls = ControlsView()
     private var updateSubscription: Cancellable?
     private var woods: Woods!
+    private var builder: Builder!
+    private var sky: Sky!
+    private let sun = DirectionalLight()
+
+    /// Ved Lowe har å bygge med. Huskes mellom gangene.
+    private var wood: Int = UserDefaults.standard.object(forKey: "lowe.wood") as? Int ?? 12 {
+        didSet {
+            UserDefaults.standard.set(wood, forKey: "lowe.wood")
+            controls.setWood(wood)
+        }
+    }
+    private var buildMode = false
+    private var placePending = false
+    /// Klossen Lowe hugger løs, når han ikke står ved stabben eller et tre.
+    private var chopBlock: Builder.Cell?
+    /// Stokken Lowe bærer på skuldrene.
+    private var carrying: Entity?
 
     private let blockPosition = SIMD3<Float>(0, 0, 0)
     private let pilePosition = SIMD3<Float>(2.3, 0, -0.7)
@@ -32,8 +50,9 @@ final class Forest: NSObject {
     private var chopWhenArrived = false
     /// Treet Lowe hugger i, når han ikke står ved stabben.
     private var chopTree: Int?
-    private var jumpHeight: Float = 0
-    private var jumpSpeed: Float = 0
+    /// Hvor høyt føttene er: 0 på snøen, høyere oppå klosser og i hopp.
+    private var footY: Float = 0
+    private var fallSpeed: Float = 0
     private var walkPhase: Float = 0
     private var walkAmount: Float = 0
     private var chopTime: Float?
@@ -98,7 +117,10 @@ final class Forest: NSObject {
         controls.onLook = { [weak self] dx, dy in self?.look(dx: Float(dx), dy: Float(dy)) }
         controls.onChop = { [weak self] in self?.chopPressed() }
         controls.onJump = { [weak self] in self?.jump() }
+        controls.onBuild = { [weak self] in self?.toggleBuildMode() }
         controls.setCones(found: 0, total: 10)
+        controls.setWood(wood)
+        sky = Sky(world: world, view: view, sun: sun)
 
         updateSubscription = view.scene.subscribe(to: SceneEvents.Update.self) { [weak self] event in
             let dt = Float(min(event.deltaTime, 1.0 / 20))
@@ -113,7 +135,6 @@ final class Forest: NSObject {
     // MARK: Scenen
 
     private func buildScene() {
-        let sun = DirectionalLight()
         sun.light.intensity = 2600
         sun.light.color = UIColor(hex: 0xFFF6E8)
         sun.shadow = DirectionalLightComponent.Shadow(maximumDistance: 16, depthBias: 2)
@@ -125,8 +146,8 @@ final class Forest: NSObject {
 
         Make.part(.generatePlane(width: 90, depth: 90), Colors.snow, in: world)
 
-        woods = Woods(world: world, sound: sound, logArrivalSpot: blockPosition + [-1.1, 0, 0.2])
-        woods.onLogArrived = { [weak self] log in self?.logArrived(log) }
+        woods = Woods(world: world, sound: sound)
+        builder = Builder(world: world)
         woods.onConeFound = { [weak self] found, total in self?.controls.setCones(found: found, total: total) }
         woods.onAllConesFound = { [weak self] in
             guard let self else { return }
@@ -161,16 +182,63 @@ final class Forest: NSObject {
         cameraPitch = min(1.15, max(0.15, cameraPitch + dy * 0.005))
     }
 
+    private var onGround: Bool { footY - builder.groundHeight(at: position) < 0.01 && abs(fallSpeed) < 0.001 }
+
     private func jump() {
-        guard jumpHeight <= 0.001 else { return }
-        jumpSpeed = 4.2
+        guard onGround else { return }
+        fallSpeed = -4.7
         sound.play(.whoosh, volume: 0.4)
+    }
+
+    private func toggleBuildMode() {
+        buildMode.toggle()
+        controls.setBuildMode(buildMode)
+        sound.play(.pop, volume: 0.6)
+        if !buildMode { builder.showGhost(at: nil) }
+    }
+
+    /// Ruta der neste kloss kan settes, eller nil om det ikke er plass der.
+    private func buildCell() -> Builder.Cell? {
+        let cell = builder.targetCell(from: position, yaw: yaw)
+        let center = builder.center(of: cell)
+        if cell == builder.cell(at: position) { return nil }
+        if simd_length(SIMD2(center.x, center.z)) > woods.radius - 0.5 { return nil }
+        if flatDistance(center, blockPosition) < 1.0 || flatDistance(center, pilePosition) < 1.3
+            || flatDistance(center, sky.firePosition) < 1.0 { return nil }
+        if let visitor, flatDistance(center, visitor.position) < visitorAnimal.size + 0.5 { return nil }
+        if woods.obstacles(near: center).contains(where: { flatDistance($0.0, center) < $0.1 + 0.3 }) { return nil }
+        return cell
+    }
+
+    private func placeBlock() {
+        guard let cell = buildCell(), wood > 0, builder.place(at: cell) else {
+            sound.play(.whoosh, volume: 0.5)
+            return
+        }
+        wood -= 1
+        sound.play(.stack)
+        sound.buzz()
     }
 
     /// Øksa svinges alltid. Står Lowe nær stabben, tar han et steg bort til den og hugger kubben.
     /// Står han nær et tre, går han bort til treet og hugger i det.
     private func chopPressed() {
-        guard jumpHeight <= 0.001 else { return }
+        guard onGround else { return }
+        chopBlock = nil
+        if buildMode {
+            placePending = true
+            startChop()
+            return
+        }
+        if carryOrDrop() { return }
+        if !sky.fireLit && flatDistance(position, sky.firePosition) < 1.6 {
+            yawGoal = facing(sky.firePosition)
+            sky.lightFire()
+            sound.play(.whoosh)
+            sound.buzz(strong: true)
+            cheerTime = 0
+            return
+        }
         if flatDistance(position, blockPosition) < 1.7 {
             chopTree = nil
             walkThenChop(to: chopSpot(), facing: blockPosition)
@@ -179,8 +247,43 @@ final class Forest: NSObject {
             walkThenChop(to: woods.chopSpot(forTree: tree, from: position), facing: woods.treePosition(tree))
         } else {
             chopTree = nil
+            let front = builder.targetCell(from: position, yaw: yaw)
+            if builder.height(of: front) > 0 { chopBlock = front }
             startChop()
         }
+    }
+
+    /// Tar opp en stokk som ligger nær, eller legger fra seg den han bærer.
+    /// Nær stabben havner stokken i køen ved stabben.
+    private func carryOrDrop() -> Bool {
+        if let log = carrying {
+            carrying = nil
+            world.addChild(log)
+            if flatDistance(position, blockPosition) < 2.3 {
+                logArrived(log)
+            } else {
+                log.position = position + [sin(yaw) * 0.7, 0.17, cos(yaw) * 0.7]
+                log.orientation = rotY(yaw)
+                log.scale = [1, 1, 1]
+                woods.putDown(log)
+                sound.play(.land, volume: 0.6)
+            }
+            sound.buzz()
+            return true
+        }
+        if let log = woods.nearestLooseLog(to: position, within: 1.5) {
+            woods.take(log)
+            yawGoal = facing(log.position)
+            lowe.root.addChild(log)
+            log.position = [0, 1.42, -0.04]
+            log.orientation = rotY(0)
+            log.scale = [0.85, 0.85, 0.85]
+            carrying = log
+            sound.play(.pop)
+            sound.buzz()
+            return true
+        }
+        return false
     }
 
     private func walkThenChop(to spot: SIMD3<Float>, facing point: SIMD3<Float>) {
@@ -222,6 +325,8 @@ final class Forest: NSObject {
         var obstacles: [(SIMD3<Float>, Float)] = [(blockPosition, 0.6), (pilePosition, 0.95)]
         if let visitor { obstacles.append((visitor.position, visitorAnimal.size + 0.3)) }
         obstacles += woods.obstacles(near: q)
+        obstacles.append((sky.firePosition, 0.6))
+        obstacles += builder.obstacles(near: q, footY: footY)
         for (center, radius) in obstacles {
             let d = SIMD2<Float>(q.x - center.x, q.z - center.z)
             let len = simd_length(d)
@@ -249,11 +354,26 @@ final class Forest: NSObject {
     }
 
     private func axeHit() {
+        if placePending {
+            placePending = false
+            placeBlock()
+            return
+        }
+        if let cell = chopBlock {
+            chopBlock = nil
+            if let p = builder.removeTop(at: cell) {
+                wood += 1
+                sound.play(.chop)
+                sound.buzz()
+                burstChips(at: p)
+                return
+            }
+        }
         if let tree = chopTree, woods.canHit(tree: tree, from: position) {
             sound.play(.chop)
             sound.buzz()
             burstChips(at: woods.treePosition(tree) + [0, 0.55, 0])
-            woods.hit(tree: tree, from: position)
+            if woods.hit(tree: tree, from: position) { wood += 4 }
             return
         }
         let atBlock = abs(flatDistance(position, blockPosition) - chopDistance) < 0.25
@@ -319,6 +439,7 @@ final class Forest: NSObject {
     /// En stokk fra et felt tre har trillet fram og legges ved siden av stabben.
     private func logArrived(_ lying: Entity) {
         lying.orientation = rotY(0)
+        lying.scale = [1, 1, 1]
         waitingLogs.append(lying)
         arrangeWaitingLogs()
         sound.play(.stack, volume: 0.7)
@@ -333,6 +454,7 @@ final class Forest: NSObject {
 
     private func split(_ log: Entity) {
         self.log = nil
+        wood += 2
         sound.play(.split)
         sound.buzz(strong: true)
         let origin = log.position
@@ -558,14 +680,16 @@ final class Forest: NSObject {
             cheer = cheerTime
         }
 
-        lowe.root.position = position + [0, jumpHeight, 0]
+        lowe.root.position = position + [0, footY, 0]
         lowe.root.orientation = rotY(yaw)
-        lowe.pose(walkPhase: walkPhase, walk: walkAmount, chop: chop, cheer: cheer, time: time)
+        lowe.pose(walkPhase: walkPhase, walk: walkAmount, chop: chop, cheer: cheer, carrying: carrying != nil, time: time)
 
         updateVisitor(dt)
         updateFlyers(dt)
         updateCamera(dt: dt)
         woods.update(dt, lowe: position, camera: camera.position(relativeTo: nil))
+        sky.update(dt, around: position)
+        builder.showGhost(at: buildMode ? buildCell() : nil)
     }
 
     private func moveLowe(_ dt: Float) {
@@ -579,9 +703,10 @@ final class Forest: NSObject {
             let forward = SIMD2<Float>(-sin(cameraYaw), -cos(cameraYaw))
             let right = SIMD2<Float>(cos(cameraYaw), -sin(cameraYaw))
             let dir = simd_normalize(right * stick.x + forward * stick.y)
-            speed = walkSpeed * push
-            position += SIMD3(dir.x, 0, dir.y) * speed * dt
-            position = keepClear(position)
+            speed = walkSpeed * push * (carrying == nil ? 1 : 0.75)
+            let next = keepClear(position + SIMD3(dir.x, 0, dir.y) * speed * dt)
+            // Klosser som er høyere enn Lowe kan hoppe, kommer han ikke opp på.
+            if builder.groundHeight(at: next) <= footY + 0.3 { position = next }
             yawGoal = atan2(dir.x, dir.y)
         } else if let goal = target {
             var delta = goal - position
@@ -605,23 +730,28 @@ final class Forest: NSObject {
         turn = atan2(sin(turn), cos(turn))
         yaw += turn * min(1, dt * 12)
 
-        if jumpHeight > 0 || jumpSpeed > 0 {
-            jumpSpeed -= 12 * dt
-            jumpHeight += jumpSpeed * dt
-            if jumpHeight <= 0 {
-                jumpHeight = 0
-                jumpSpeed = 0
-                sound.play(.land, volume: 0.35)
+        // Tyngdekraft: Lowe står på snøen eller oppå klossene, og faller ned når han går utfor.
+        let ground = builder.groundHeight(at: position)
+        if footY > ground || fallSpeed < 0 {
+            fallSpeed += 12 * dt
+            footY -= fallSpeed * dt
+            if footY <= ground {
+                if fallSpeed > 2 { sound.play(.land, volume: 0.35) }
+                footY = ground
+                fallSpeed = 0
             }
+        } else {
+            footY = ground
+            fallSpeed = 0
         }
 
-        let moving = min(1, speed / walkSpeed) * (jumpHeight > 0 ? 0.3 : 1)
+        let moving = min(1, speed / walkSpeed) * (onGround ? 1 : 0.3)
         walkAmount += (moving - walkAmount) * min(1, dt * 10)
         walkPhase += dt * 10 * walkAmount
     }
 
     private func updateCamera(dt: Float) {
-        let focus = position + [0, 0.7, 0]
+        let focus = position + [0, 0.7 + footY, 0]
         cameraFocus += (focus - cameraFocus) * min(1, dt * 5)
         let offset = SIMD3<Float>(sin(cameraYaw) * cos(cameraPitch),
                                   sin(cameraPitch),
