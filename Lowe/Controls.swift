@@ -20,6 +20,8 @@ final class ControlsView: UIView {
     var onHold: ((CGPoint) -> Void)?
     var onPickBlock: ((Int) -> Void)?
     var onBackpack: (() -> Void)?
+    /// Den gule hånd-knappen: ta opp eller legg fra seg det Lowe står ved.
+    var onHand: (() -> Void)?
 
     private let stickRadius: CGFloat = 64
     private let stickBase = UIView()
@@ -28,6 +30,7 @@ final class ControlsView: UIView {
     private let jumpButton = UIView()
     private let buildButton = UIView()
     private let backpackButton = UIView()
+    private let handButton = UIView()
     private let axeLayer = ControlsView.axeIcon(in: 104)
     private let blockLayer = ControlsView.blockIcon(in: 104, plus: true)
     private let woodLabel = UILabel()
@@ -99,6 +102,8 @@ final class ControlsView: UIView {
         woodLabel.shadowOffset = CGSize(width: 0, height: 2)
         woodLabel.isUserInteractionEnabled = false
         addSubview(woodLabel)
+        styleButton(handButton, size: 90, color: Colors.sun)
+        handButton.isHidden = true
         styleButton(backpackButton, size: 70, color: .white)
         let bag = Icons.backpack(58)
         bag.frame.origin = CGPoint(x: 6, y: 5)
@@ -350,6 +355,7 @@ final class ControlsView: UIView {
                                     y: bounds.maxY - inset.bottom - margin - 52)
         jumpButton.center = CGPoint(x: chopButton.center.x - 112, y: chopButton.center.y + 12)
         buildButton.center = CGPoint(x: chopButton.center.x + 6, y: chopButton.center.y - 116)
+        handButton.center = CGPoint(x: chopButton.center.x - 134, y: chopButton.center.y - 104)
         backpackButton.center = CGPoint(x: bounds.maxX - inset.right - margin - 35, y: bounds.minY + inset.top + 46)
         woodIcon.center = CGPoint(x: bounds.minX + inset.left + 36, y: bounds.minY + inset.top + 82)
         woodLabel.frame.origin = CGPoint(x: woodIcon.frame.maxX + 8, y: woodIcon.center.y - woodLabel.bounds.height / 2)
@@ -392,6 +398,9 @@ final class ControlsView: UIView {
             } else if hits(buildButton, p) {
                 bounce(buildButton)
                 onBuild?()
+            } else if !handButton.isHidden && hits(handButton, p) {
+                bounce(handButton)
+                onHand?()
             } else if hits(backpackButton, p) {
                 bounce(backpackButton)
                 onBackpack?()
@@ -496,6 +505,54 @@ final class ControlsView: UIView {
         holdTimer?.invalidate()
         holdTimer = nil
         holdFired = false
+    }
+
+    /// Viser hånd-knappen med bildet av tingen og en pil opp (ta) eller ned (legg fra seg), eller skjuler den.
+    func setHand(_ icon: CALayer?, arrowUp: Bool? = nil) {
+        handButton.layer.sublayers?.filter { $0.name == "hand" }.forEach { $0.removeFromSuperlayer() }
+        guard let icon else {
+            handButton.isHidden = true
+            return
+        }
+        let size = handButton.bounds.width
+        let holder = CALayer()
+        holder.name = "hand"
+        holder.frame = handButton.bounds
+        icon.frame.origin = CGPoint(x: (size - icon.bounds.width) / 2, y: (size - icon.bounds.height) / 2 - 4)
+        holder.addSublayer(icon)
+        if let up = arrowUp {
+            let badge = CAShapeLayer()
+            badge.path = UIBezierPath(ovalIn: CGRect(x: size - 34, y: size - 34, width: 30, height: 30)).cgPath
+            badge.fillColor = Colors.turquoise.cgColor
+            badge.strokeColor = Colors.ink.cgColor
+            badge.lineWidth = 3
+            holder.addSublayer(badge)
+            let arrow = CAShapeLayer()
+            let c = CGPoint(x: size - 19, y: size - 19)
+            let path = UIBezierPath()
+            let dir: CGFloat = up ? -1 : 1
+            path.move(to: CGPoint(x: c.x, y: c.y - 8 * dir))
+            path.addLine(to: CGPoint(x: c.x, y: c.y + 8 * dir))
+            path.move(to: CGPoint(x: c.x - 6, y: c.y + 2 * dir))
+            path.addLine(to: CGPoint(x: c.x, y: c.y + 8 * dir))
+            path.addLine(to: CGPoint(x: c.x + 6, y: c.y + 2 * dir))
+            arrow.path = path.cgPath
+            arrow.strokeColor = Colors.ink.cgColor
+            arrow.fillColor = nil
+            arrow.lineWidth = 3.5
+            arrow.lineCap = .round
+            arrow.lineJoin = .round
+            holder.addSublayer(arrow)
+        }
+        handButton.layer.addSublayer(holder)
+        let wasHidden = handButton.isHidden
+        handButton.isHidden = false
+        if wasHidden {
+            handButton.transform = CGAffineTransform(scaleX: 0.3, y: 0.3)
+            UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.5, initialSpringVelocity: 3) {
+                self.handButton.transform = .identity
+            }
+        }
     }
 
     /// Slipper spaken og kameradraget, for eksempel når ryggsekken åpnes over styringen.
