@@ -7,10 +7,16 @@
 	objects = {
 
 /* Begin PBXFileReference section */
+		A3D000000000000000000001 /* Lowe3D.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Lowe3D.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		06DB98D3872A045026DD6CA4 /* Lowe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Lowe.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		A3D000000000000000000002 /* Lowe3D */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Lowe3D;
+			sourceTree = "<group>";
+		};
 		30B27CC8180878B29FC0ECDD /* Lowe */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Lowe;
@@ -19,6 +25,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		A3D000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		5974CF30EA7A3543DDF1D63C /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -33,6 +46,7 @@
 			isa = PBXGroup;
 			children = (
 				30B27CC8180878B29FC0ECDD /* Lowe */,
+				A3D000000000000000000002 /* Lowe3D */,
 				A12D51EF0EAD798153A499E7 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +55,7 @@
 			isa = PBXGroup;
 			children = (
 				06DB98D3872A045026DD6CA4 /* Lowe.app */,
+				A3D000000000000000000001 /* Lowe3D.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,6 +63,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		A3D000000000000000000006 /* Lowe3D */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A3D000000000000000000007 /* Build configuration list for PBXNativeTarget "Lowe3D" */;
+			buildPhases = (
+				A3D000000000000000000005 /* Sources */,
+				A3D000000000000000000003 /* Frameworks */,
+				A3D000000000000000000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A3D000000000000000000002 /* Lowe3D */,
+			);
+			name = Lowe3D;
+			packageProductDependencies = (
+			);
+			productName = Lowe3D;
+			productReference = A3D000000000000000000001 /* Lowe3D.app */;
+			productType = "com.apple.product-type.application";
+		};
 		4FD8818CCA6D98317BEDB50A /* Lowe */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 4F673C5F94D7E028D9FF2C8F /* Build configuration list for PBXNativeTarget "Lowe" */;
@@ -83,6 +120,9 @@
 					4FD8818CCA6D98317BEDB50A = {
 						CreatedOnToolsVersion = 16.0;
 					};
+					A3D000000000000000000006 = {
+						CreatedOnToolsVersion = 16.0;
+					};
 				};
 			};
 			buildConfigurationList = 8212C084757BD9375D2E219A /* Build configuration list for PBXProject "Lowe" */;
@@ -100,11 +140,19 @@
 			projectRoot = "";
 			targets = (
 				4FD8818CCA6D98317BEDB50A /* Lowe */,
+				A3D000000000000000000006 /* Lowe3D */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		A3D000000000000000000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D93049C4FA259B7873A60DF3 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -115,6 +163,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		A3D000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F2DD58CCFE8FFDAFB481AA4B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -125,6 +180,72 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		A3D000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5BSVST8Z65;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Lowe 3D";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.kids-games";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UIStatusBarHidden = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alvaro365.lowe3d;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A3D000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5BSVST8Z65;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Lowe 3D";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.kids-games";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UIStatusBarHidden = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alvaro365.lowe3d;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		7E3A1C2B9D4F5E6A7B8C9D0E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -311,6 +432,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		A3D000000000000000000007 /* Build configuration list for PBXNativeTarget "Lowe3D" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A3D000000000000000000008 /* Debug */,
+				A3D000000000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		4F673C5F94D7E028D9FF2C8F /* Build configuration list for PBXNativeTarget "Lowe" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
