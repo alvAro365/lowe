@@ -18,6 +18,10 @@ Spillet kjører i liggende format på både iPhone og iPad. Lyden følger lydlø
 - Dra på høyre halvdel for å snu kameraet rundt Lowe.
 - Den store turkise knappen (eller et kort trykk til høyre) hugger. Står han nær stabben, går han bort og hugger kubben. Tre hogg deler den.
 - Den hvite knappen med pil hopper.
+- Står Lowe ved et grantre, hugger øksa i treet. Fire hogg, så faller det, og stokken triller bort til stabben.
+  Stubben blir stående, og etter en stund vokser et nytt tre opp.
+- Skogen er stor, med stier ut fra lysningen. Ti kongler ligger gjemt rundt omkring, og raden oppe til venstre
+  viser hvor mange Lowe har funnet. Ekorn piler av gårde når han kommer nær, og det snør.
 - Vedstykkene flyr til stabelen. Ved stabelen venter et dyr fra skogen.
 - Når stabelen er full, blir det konfetti, veden flyr til dyret, og det går hjem med den.
   Så kommer neste dyr: pinnsvinet, reven, elgen, bjørnen og ugla, og så forfra. Spillet husker hvem som står for tur.
@@ -32,6 +36,7 @@ Spillet bruker RealityKit. Alt er bygd av enkle former (bokser, kuler, sylindre 
 | `Lowe/Forest.swift` | Skogen, kameraet, gåing, hopping, hugging og vedstabelen |
 | `Lowe/Controls.swift` | Spaken, kameradraget og knappene for å hugge og hoppe |
 | `Lowe/LoweFigure.swift` | Lowe bygd av enkle 3D-former, med gange og hogg |
+| `Lowe/Woods.swift` | Den store skogen: stier, trær som kan felles, stokker som triller, kongler, ekorn og snø |
 | `Lowe/Animals.swift` | De fem dyrene, bygd av enkle former i fargene fra 2D-designet |
 | `Lowe/Models.swift` | Farger og byggeklosser: trær, stabbe, kubbe og vedstykker |
 | `Lowe/Sound.swift` | Lyd og vibrasjon |

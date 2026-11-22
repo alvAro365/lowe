@@ -16,6 +16,9 @@ final class ControlsView: UIView {
     private let stickKnob = UIView()
     private let chopButton = UIView()
     private let jumpButton = UIView()
+    /// Konglene Lowe har funnet, som en rad oppe til venstre.
+    private var coneIcons: [UIView] = []
+    private var conesFound = 0
 
     private var stickTouch: UITouch?
     private var stickCenter: CGPoint = .zero
@@ -95,9 +98,37 @@ final class ControlsView: UIView {
         return layer
     }
 
+    func setCones(found: Int, total: Int) {
+        if coneIcons.count != total {
+            coneIcons.forEach { $0.removeFromSuperview() }
+            coneIcons = (0..<total).map { _ in
+                let icon = UIView(frame: CGRect(x: 0, y: 0, width: 22, height: 30))
+                icon.layer.cornerRadius = 11
+                icon.layer.borderWidth = 3
+                icon.layer.borderColor = Colors.bark.cgColor
+                icon.isUserInteractionEnabled = false
+                addSubview(icon)
+                return icon
+            }
+            setNeedsLayout()
+        }
+        for (i, icon) in coneIcons.enumerated() {
+            icon.backgroundColor = i < found ? Colors.bark : UIColor(white: 1, alpha: 0.35)
+        }
+        if found > conesFound, let icon = coneIcons[safe: found - 1] {
+            icon.transform = CGAffineTransform(scaleX: 1.6, y: 1.6)
+            UIView.animate(withDuration: 0.25) { icon.transform = .identity }
+        }
+        conesFound = found
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         let inset = safeAreaInsets
+        for (i, icon) in coneIcons.enumerated() {
+            icon.center = CGPoint(x: bounds.minX + inset.left + 30 + CGFloat(i) * 30,
+                                  y: bounds.minY + inset.top + 32)
+        }
         let margin: CGFloat = 26
         chopButton.center = CGPoint(x: bounds.maxX - inset.right - margin - 52,
                                     y: bounds.maxY - inset.bottom - margin - 52)
@@ -197,5 +228,11 @@ final class ControlsView: UIView {
     private func bounce(_ button: UIView) {
         button.transform = CGAffineTransform(scaleX: 0.88, y: 0.88)
         UIView.animate(withDuration: 0.18) { button.transform = .identity }
+    }
+}
+
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }

@@ -4,6 +4,7 @@ import UIKit
 
 /// Skogen i 3D. Spaken til venstre får Lowe til å gå, dra til høyre snur kameraet,
 /// og knappene hugger og hopper. Tre hogg deler kubben, og vedstykkene flyr til stabelen.
+/// Trærne rundt kan felles, og stokkene triller til stabben. Selve skogen ligger i Woods.
 @MainActor
 final class Forest: NSObject {
     private weak var view: ARView?
@@ -13,6 +14,7 @@ final class Forest: NSObject {
     private let sound = Sound()
     private let controls = ControlsView()
     private var updateSubscription: Cancellable?
+    private var woods: Woods!
 
     private let blockPosition = SIMD3<Float>(0, 0, 0)
     private let pilePosition = SIMD3<Float>(2.3, 0, -0.7)
@@ -21,7 +23,6 @@ final class Forest: NSObject {
     private let hitsNeeded = 3
     private let pileCapacity = 12
     private let walkSpeed: Float = 2.2
-    private let forestRadius: Float = 7.5
 
     // Lowe
     private var position = SIMD3<Float>(0, 0, 2.4)
@@ -29,6 +30,8 @@ final class Forest: NSObject {
     private var yawGoal: Float = .pi
     private var target: SIMD3<Float>?
     private var chopWhenArrived = false
+    /// Treet Lowe hugger i, når han ikke står ved stabben.
+    private var chopTree: Int?
     private var jumpHeight: Float = 0
     private var jumpSpeed: Float = 0
     private var walkPhase: Float = 0
@@ -42,6 +45,8 @@ final class Forest: NSObject {
     private var log: Entity?
     private var logIncoming = false
     private var logHits = 0
+    /// Stokker fra felte trær som ligger ved stabben og venter på tur.
+    private var waitingLogs: [Entity] = []
     private var pile: [Entity] = []
     private var reserved = 0
 
@@ -93,6 +98,7 @@ final class Forest: NSObject {
         controls.onLook = { [weak self] dx, dy in self?.look(dx: Float(dx), dy: Float(dy)) }
         controls.onChop = { [weak self] in self?.chopPressed() }
         controls.onJump = { [weak self] in self?.jump() }
+        controls.setCones(found: 0, total: 10)
 
         updateSubscription = view.scene.subscribe(to: SceneEvents.Update.self) { [weak self] event in
             let dt = Float(min(event.deltaTime, 1.0 / 20))
@@ -117,25 +123,18 @@ final class Forest: NSObject {
         camera.camera.fieldOfViewInDegrees = 45
         world.addChild(camera)
 
-        Make.part(.generatePlane(width: 60, depth: 60), Colors.snow, in: world)
+        Make.part(.generatePlane(width: 90, depth: 90), Colors.snow, in: world)
 
-        // Trærne står i en ring rundt lysningen, med noen få nærmere.
-        var random = SeededRandom(seed: 7)
-        let ring = 30
-        for i in 0..<ring {
-            let angle = Float(i) / Float(ring) * 2 * .pi + random.next(-0.07, 0.07)
-            let radius = random.next(8.5, 13)
-            let tree = Make.spruce(scale: random.next(0.9, 1.5))
-            tree.position = [cos(angle) * radius, 0, sin(angle) * radius]
-            world.addChild(tree)
+        woods = Woods(world: world, sound: sound, logArrivalSpot: blockPosition + [-1.1, 0, 0.2])
+        woods.onLogArrived = { [weak self] log in self?.logArrived(log) }
+        woods.onConeFound = { [weak self] found, total in self?.controls.setCones(found: found, total: total) }
+        woods.onAllConesFound = { [weak self] in
+            guard let self else { return }
+            self.sound.play(.cheer)
+            self.cheerTime = 0
+            self.confetti(at: self.position + [0, 1.4, 0])
         }
-        let nearTrees: [(Float, Float, Float)] = [(-3.6, -2.8, 1.1), (4.4, -3.4, 1.25), (-5.2, 1.4, 1.0),
-                                                  (5.6, 2.6, 0.95), (-1.8, -5.6, 1.3), (1.6, -6.2, 1.15)]
-        for (x, z, s) in nearTrees {
-            let tree = Make.spruce(scale: s)
-            tree.position = [x, 0, z]
-            world.addChild(tree)
-        }
+
         for (x, z, r) in [(-2.4, 1.2, 0.6), (3.4, 1.6, 0.8), (-4.2, -1.0, 0.7), (1.0, -3.4, 0.5), (-0.6, 4.6, 0.7)] as [(Float, Float, Float)] {
             let mound = Make.snowMound(radius: r)
             mound.position = [x, 0, z]
@@ -169,20 +168,33 @@ final class Forest: NSObject {
     }
 
     /// Øksa svinges alltid. Står Lowe nær stabben, tar han et steg bort til den og hugger kubben.
+    /// Står han nær et tre, går han bort til treet og hugger i det.
     private func chopPressed() {
         guard jumpHeight <= 0.001 else { return }
         if flatDistance(position, blockPosition) < 1.7 {
-            let spot = chopSpot()
-            if flatDistance(position, spot) < 0.12 {
-                yawGoal = facingBlock()
-                startChop()
-            } else {
-                target = spot
-                chopWhenArrived = true
-            }
+            chopTree = nil
+            walkThenChop(to: chopSpot(), facing: blockPosition)
+        } else if let tree = woods.nearestTree(to: position, within: 1.9) {
+            chopTree = tree
+            walkThenChop(to: woods.chopSpot(forTree: tree, from: position), facing: woods.treePosition(tree))
         } else {
+            chopTree = nil
             startChop()
         }
+    }
+
+    private func walkThenChop(to spot: SIMD3<Float>, facing point: SIMD3<Float>) {
+        if flatDistance(position, spot) < 0.15 {
+            yawGoal = facing(point)
+            startChop()
+        } else {
+            target = spot
+            chopWhenArrived = true
+        }
+    }
+
+    private func facing(_ point: SIMD3<Float>) -> Float {
+        atan2(point.x - position.x, point.z - position.z)
     }
 
     /// Plassen foran stabben, på den siden Lowe står.
@@ -193,20 +205,23 @@ final class Forest: NSObject {
         return SIMD3(blockPosition.x + dir.x * chopDistance, 0, blockPosition.z + dir.y * chopDistance)
     }
 
-    private func facingBlock() -> Float {
-        atan2(blockPosition.x - position.x, blockPosition.z - position.z)
+    /// Retningen Lowe skal se når han har gått fram for å hugge.
+    private func chopFacing() -> Float {
+        if let tree = chopTree { return facing(woods.treePosition(tree)) }
+        return facing(blockPosition)
     }
 
     /// Holder målet innenfor lysningen og utenfor stabben og vedstabelen.
     private func keepClear(_ p: SIMD3<Float>) -> SIMD3<Float> {
         var q = SIMD3<Float>(p.x, 0, p.z)
         let fromCenter = SIMD2<Float>(q.x, q.z)
-        if simd_length(fromCenter) > forestRadius {
-            let c = simd_normalize(fromCenter) * forestRadius
+        if simd_length(fromCenter) > woods.radius {
+            let c = simd_normalize(fromCenter) * woods.radius
             q = SIMD3(c.x, 0, c.y)
         }
         var obstacles: [(SIMD3<Float>, Float)] = [(blockPosition, 0.6), (pilePosition, 0.95)]
         if let visitor { obstacles.append((visitor.position, visitorAnimal.size + 0.3)) }
+        obstacles += woods.obstacles(near: q)
         for (center, radius) in obstacles {
             let d = SIMD2<Float>(q.x - center.x, q.z - center.z)
             let len = simd_length(d)
@@ -234,6 +249,13 @@ final class Forest: NSObject {
     }
 
     private func axeHit() {
+        if let tree = chopTree, woods.canHit(tree: tree, from: position) {
+            sound.play(.chop)
+            sound.buzz()
+            burstChips(at: woods.treePosition(tree) + [0, 0.55, 0])
+            woods.hit(tree: tree, from: position)
+            return
+        }
         let atBlock = abs(flatDistance(position, blockPosition) - chopDistance) < 0.25
         guard atBlock, let log else {
             sound.play(.whoosh, volume: 0.7)
@@ -250,25 +272,62 @@ final class Forest: NSObject {
         }
     }
 
+    /// Ny kubbe på stabben: først stokker fra felte trær, ellers faller en ned fra himmelen.
     private func dropLog() {
         guard log == nil, !logIncoming, reserved + 2 <= pileCapacity else { return }
         logIncoming = true
+        let end = blockPosition + [0, logRestY, 0]
+        if !waitingLogs.isEmpty {
+            let lying = waitingLogs.removeFirst()
+            arrangeWaitingLogs()
+            let d: Float = 0.55
+            let g: Float = 12
+            var v = (end - lying.position) / d
+            v.y = (end.y - lying.position.y + 0.5 * g * d * d) / d
+            launch(lying, velocity: v, gravity: g, duration: d, target: end, spin: [0, 0, 6]) { [weak self, weak lying] in
+                lying?.removeFromParent()
+                guard let self else { return }
+                let newLog = Make.log()
+                newLog.position = end
+                self.world.addChild(newLog)
+                self.logLanded(newLog)
+            }
+            return
+        }
         let newLog = Make.log()
         let start = blockPosition + [0, 4.5, 0]
-        let end = blockPosition + [0, logRestY, 0]
         newLog.position = start
         world.addChild(newLog)
         let g: Float = 14
         let duration = sqrt(2 * (start.y - end.y) / g)
         launch(newLog, velocity: .zero, gravity: g, duration: duration, target: end) { [weak self, weak newLog] in
             guard let self, let newLog else { return }
-            self.log = newLog
-            self.logIncoming = false
-            self.logHits = 0
-            self.sound.play(.land)
-            self.sound.buzz(strong: true)
-            newLog.scale = [1.1, 0.85, 1.1]
-            self.after(0.1) { [weak newLog] in newLog?.scale = [1, 1, 1] }
+            self.logLanded(newLog)
+        }
+    }
+
+    private func logLanded(_ newLog: Entity) {
+        log = newLog
+        logIncoming = false
+        logHits = 0
+        sound.play(.land)
+        sound.buzz(strong: true)
+        newLog.scale = [1.1, 0.85, 1.1]
+        after(0.1) { [weak newLog] in newLog?.scale = [1, 1, 1] }
+    }
+
+    /// En stokk fra et felt tre har trillet fram og legges ved siden av stabben.
+    private func logArrived(_ lying: Entity) {
+        lying.orientation = rotY(0)
+        waitingLogs.append(lying)
+        arrangeWaitingLogs()
+        sound.play(.stack, volume: 0.7)
+        dropLog()
+    }
+
+    private func arrangeWaitingLogs() {
+        for (i, lying) in waitingLogs.enumerated() {
+            lying.position = blockPosition + [-1.1, 0.17 + Float(i / 3) * 0.32, 0.35 - Float(i % 3) * 0.36]
         }
     }
 
@@ -333,15 +392,19 @@ final class Forest: NSObject {
     private func pileFull() {
         sound.play(.cheer)
         cheerTime = 0
+        confetti(at: pilePosition + [0, 0.8, 0])
+        after(1.4) { [weak self] in self?.deliverWoodIfReady() }
+    }
+
+    private func confetti(at p: SIMD3<Float>) {
         let colors = [Colors.turquoise, Colors.ink, Colors.white, Colors.sun]
         for i in 0..<36 {
             let bit = Make.part(Make.box(0.07, 0.015, 0.05), colors[i % colors.count], in: world)
-            bit.position = pilePosition + [0, 0.8, 0]
+            bit.position = p
             launch(bit, velocity: [Float.random(in: -2.5...2.5), Float.random(in: 4...7), Float.random(in: -2.5...2.5)],
                    gravity: 7, duration: 1.6, target: nil,
                    spin: [Float.random(in: -10...10), Float.random(in: -10...10), 0])
         }
-        after(1.4) { [weak self] in self?.deliverWoodIfReady() }
     }
 
     // MARK: Dyrene
@@ -502,6 +565,7 @@ final class Forest: NSObject {
         updateVisitor(dt)
         updateFlyers(dt)
         updateCamera(dt: dt)
+        woods.update(dt, lowe: position, camera: camera.position(relativeTo: nil))
     }
 
     private func moveLowe(_ dt: Float) {
@@ -528,7 +592,7 @@ final class Forest: NSObject {
                 target = nil
                 if chopWhenArrived {
                     chopWhenArrived = false
-                    yawGoal = facingBlock()
+                    yawGoal = chopFacing()
                     startChop()
                 }
             } else {

@@ -5,7 +5,7 @@ import UIKit
 @MainActor
 final class Sound {
     enum Name: String, CaseIterable {
-        case chop, split, stack, land, whoosh, cheer
+        case chop, split, stack, land, whoosh, cheer, squeak, pop
     }
 
     private var players: [Name: [AVAudioPlayer]] = [:]

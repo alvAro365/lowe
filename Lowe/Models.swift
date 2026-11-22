@@ -48,13 +48,31 @@ enum Make {
         return e
     }
 
-    static func box(_ w: Float, _ h: Float, _ d: Float, r: Float = 0) -> MeshResource {
-        .generateBox(size: [w, h, d], cornerRadius: r)
+    /// Like former deles, så skogen med mange trær ikke lager hundrevis av like modeller.
+    private static var meshes: [String: MeshResource] = [:]
+
+    private static func cached(_ key: String, _ make: () -> MeshResource) -> MeshResource {
+        if let mesh = meshes[key] { return mesh }
+        let mesh = make()
+        meshes[key] = mesh
+        return mesh
     }
 
-    static func sphere(_ r: Float) -> MeshResource { .generateSphere(radius: r) }
-    static func cylinder(_ h: Float, _ r: Float) -> MeshResource { safe { .generateCylinder(height: h, radius: r) } }
-    static func cone(_ h: Float, _ r: Float) -> MeshResource { safe { .generateCone(height: h, radius: r) } }
+    static func box(_ w: Float, _ h: Float, _ d: Float, r: Float = 0) -> MeshResource {
+        cached("box \(w) \(h) \(d) \(r)") { .generateBox(size: [w, h, d], cornerRadius: r) }
+    }
+
+    static func sphere(_ r: Float) -> MeshResource {
+        cached("sphere \(r)") { .generateSphere(radius: r) }
+    }
+
+    static func cylinder(_ h: Float, _ r: Float) -> MeshResource {
+        cached("cylinder \(h) \(r)") { safe { .generateCylinder(height: h, radius: r) } }
+    }
+
+    static func cone(_ h: Float, _ r: Float) -> MeshResource {
+        cached("cone \(h) \(r)") { safe { .generateCone(height: h, radius: r) } }
+    }
 
     private static func safe(_ make: () throws -> MeshResource) -> MeshResource {
         (try? make()) ?? .generateBox(size: 0.01)
@@ -107,6 +125,73 @@ enum Make {
             end.orientation = rotX(.pi / 2)
         }
         return piece
+    }
+}
+
+@MainActor
+extension Make {
+    /// Stubben som blir igjen når et tre er felt.
+    static func stump(scale s: Float) -> Entity {
+        let stump = Entity()
+        part(cylinder(0.22, 0.13), Colors.trunk, at: [0, 0.11, 0], in: stump)
+        part(cylinder(0.012, 0.115), Colors.wood, at: [0, 0.222, 0], in: stump)
+        part(cylinder(0.02, 0.1), Colors.white, at: [0, 0.235, 0], in: stump)
+        stump.scale = [s, s, s]
+        return stump
+    }
+
+    /// En stokk som ligger og kan trille. Den ligger langs x.
+    static func lyingLog() -> Entity {
+        let log = Entity()
+        let wood = part(cylinder(0.7, 0.17), Colors.bark, in: log)
+        wood.orientation = rotZ(.pi / 2)
+        for x in [Float(0.351), -0.351] {
+            let end = part(cylinder(0.006, 0.15), Colors.wood, at: [x, 0, 0], in: log)
+            end.orientation = rotZ(.pi / 2)
+        }
+        return log
+    }
+
+    static func pinecone() -> Entity {
+        let cone = Entity()
+        let body = part(sphere(0.08), Colors.bark, at: [0, 0.12, 0], in: cone)
+        body.scale = [1, 1.45, 1]
+        let scaleColor = UIColor(hex: 0x5E3820)
+        for i in 0..<8 {
+            let a = Float(i) / 8 * 2 * .pi
+            let y: Float = i % 2 == 0 ? 0.09 : 0.15
+            let bit = part(Make.cone(0.05, 0.03), scaleColor, at: [cos(a) * 0.065, y, sin(a) * 0.065], in: cone)
+            bit.orientation = simd_quatf(from: [0, 1, 0], to: simd_normalize(SIMD3<Float>(cos(a), -0.8, sin(a))))
+        }
+        part(cylinder(0.04, 0.012), Colors.trunk, at: [0, 0.25, 0], in: cone)
+        return cone
+    }
+
+    /// Et ekorn med føttene i (0, 0, 0), som ser langs +z. Halen heter "tail".
+    static func squirrel() -> Entity {
+        let squirrel = Entity()
+        let fur = UIColor(hex: 0xC2602E)
+        let belly = UIColor(hex: 0xF6E2C8)
+        let body = part(sphere(0.11), fur, at: [0, 0.14, 0], in: squirrel)
+        body.scale = [0.9, 1.15, 1]
+        let chest = part(sphere(0.07), belly, at: [0, 0.13, 0.06], in: squirrel)
+        chest.scale = [0.9, 1.2, 0.7]
+        part(sphere(0.085), fur, at: [0, 0.3, 0.05], in: squirrel)
+        for x in [Float(0.045), -0.045] {
+            let ear = part(cone(0.06, 0.022), fur, at: [x, 0.39, 0.03], in: squirrel)
+            ear.orientation = rotZ(-x * 4)
+            part(sphere(0.016), Colors.ink, at: [x, 0.32, 0.12], in: squirrel)
+        }
+        part(sphere(0.014), Colors.ink, at: [0, 0.29, 0.135], in: squirrel)
+        let tail = Entity()
+        tail.name = "tail"
+        tail.position = [0, 0.1, -0.1]
+        squirrel.addChild(tail)
+        let big = part(sphere(0.1), fur, at: [0, 0.14, -0.05], in: tail)
+        big.scale = [0.7, 1.6, 0.8]
+        let tip = part(sphere(0.07), fur, at: [0, 0.3, 0.02], in: tail)
+        tip.scale = [0.7, 1, 1]
+        return squirrel
     }
 }
 
