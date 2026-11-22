@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lager lydene og app-ikonet til Loves vedskog.
+"""Lager lydene og app-ikonet til Lowes vedskog.
 
 Kjør fra repo-roten:  python3 tools/make_assets.py
 Krever numpy og Pillow. Alt lages fra bunnen av, ingen eksterne filer.
@@ -82,6 +82,25 @@ def whoosh():
     return lowpass(rng.standard_normal(t.size), 0.08) * env
 
 
+def squeak():
+    out = np.zeros(int(RATE * 0.3))
+    for start in (0.0, 0.13):
+        t = t_axis(0.09)
+        f = 1300 + 1100 * (t / t[-1])
+        phase = 2 * math.pi * np.cumsum(f) / RATE
+        tone = np.sin(phase) * np.sin(math.pi * t / t[-1])
+        i = int(RATE * start)
+        out[i:i + t.size] += tone
+    return out
+
+
+def pop():
+    t = t_axis(0.12)
+    f = 500 - 260 * (t / t[-1])
+    phase = 2 * math.pi * np.cumsum(f) / RATE
+    return np.sin(phase) * np.exp(-t / 0.03)
+
+
 def cheer():
     total = t_axis(1.1)
     out = np.zeros(total.size)
@@ -143,5 +162,7 @@ if __name__ == "__main__":
     save("land.wav", land(), gain=0.7)
     save("whoosh.wav", whoosh(), gain=0.45)
     save("cheer.wav", cheer(), gain=0.7)
+    save("squeak.wav", squeak(), gain=0.45)
+    save("pop.wav", pop(), gain=0.6)
     icon()
     print("ok")

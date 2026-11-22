@@ -154,12 +154,12 @@ func deg(_ d: CGFloat) -> CGFloat { d * .pi / 180 }
 
 @MainActor
 enum Scenery {
-    static func spruce(color: SKColor) -> SKNode {
+    static func spruce(color: SKColor, snow: SKColor = Palette.white, trunk: SKColor = Palette.trunk) -> SKNode {
         let n = SKNode()
-        n.addChild(Shape.node(Shape.rect(-7, -20, 14, 22), fill: Palette.trunk))
+        n.addChild(Shape.node(Shape.rect(-7, -20, 14, 22), fill: trunk))
         n.addChild(Shape.svg("M0 -160 L34 -110 L18 -110 L48 -66 L28 -66 L60 -18 L-60 -18 L-28 -66 L-48 -66 L-18 -110 L-34 -110 Z", fill: color, stroke: nil))
-        n.addChild(Shape.svg("M0 -160 L17 -135 L7 -130 L0 -138 L-7 -130 L-17 -135 Z", fill: Palette.white, stroke: nil))
-        n.addChild(Shape.svg("M-48 -66 L-38 -60 L-28 -66 Z M48 -66 L38 -60 L28 -66 Z", fill: Palette.white, stroke: nil))
+        n.addChild(Shape.svg("M0 -160 L17 -135 L7 -130 L0 -138 L-7 -130 L-17 -135 Z", fill: snow, stroke: nil))
+        n.addChild(Shape.svg("M-48 -66 L-38 -60 L-28 -66 Z M48 -66 L38 -60 L28 -66 Z", fill: snow, stroke: nil))
         return n
     }
 
@@ -244,31 +244,32 @@ enum Scenery {
         Shape.svg("M0 -48 L14 -14 L50 -11 L22 12 L32 48 L0 28 L-32 48 L-22 12 L-50 -11 L-14 -14 Z",
                   fill: Palette.sun, stroke: Palette.ink, width: 4)
     }
-}
 
-// MARK: - Pinnsvinet
-
-@MainActor
-enum Hedgehog {
-    /// Pinnsvinet med føttene i (0, 0), vendt mot høyre.
-    static func build() -> SKNode {
+    /// Ekorn som hopper ut av kubben. Føttene i (0, 0), vendt mot høyre.
+    static func squirrel() -> SKNode {
+        let fur = SKColor(hex: 0xC0682F)
         let n = SKNode()
-        let body = SKNode()
-        body.position = CGPoint(x: -106, y: -172)
-        n.addChild(body)
-        body.addChild(Shape.node(Shape.ellipse(72, 166, 14, 7), fill: Palette.hogFeet, stroke: Palette.ink))
-        body.addChild(Shape.node(Shape.ellipse(140, 166, 14, 7), fill: Palette.hogFeet, stroke: Palette.ink))
-        body.addChild(Shape.svg("M24 160 L30 124 L44 132 L46 96 L64 110 L72 74 L90 96 L104 66 L116 94 L134 76 L140 106 L158 100 L156 128 L150 160 Z", fill: Palette.hogSpikes))
-        body.addChild(Shape.svg("M118 160 Q112 112 150 108 Q182 112 192 140 Q186 160 150 162 Z", fill: Palette.hogFace))
-        body.addChild(Shape.node(Shape.circle(192, 140, 7), fill: Palette.ink, stroke: Palette.ink))
-        let eye = SKNode()
-        eye.position = CGPoint(x: 156, y: 128)
-        eye.name = "eye"
-        eye.addChild(Shape.node(Shape.ellipse(0, 0, 5, 6), fill: Palette.ink))
-        eye.addChild(Shape.node(Shape.circle(1.5, -2, 1.8), fill: Palette.white))
-        body.addChild(eye)
-        body.addChild(Shape.node(Shape.circle(150, 146, 7), fill: Palette.cheek))
-        body.addChild(Shape.svg("M164 150 Q172 156 180 150", width: 3))
+        n.addChild(Shape.svg("M-6 0 Q-50 -6 -46 -50 Q-40 -82 -12 -72 Q-32 -58 -26 -36 Q-20 -16 2 -10 Z", fill: fur))
+        n.addChild(Shape.node(Shape.ellipse(8, -18, 18, 16), fill: fur, stroke: Palette.ink))
+        n.addChild(Shape.node(Shape.ellipse(15, -14, 9, 10), fill: SKColor(hex: 0xF3D9B5)))
+        n.addChild(Shape.svg("M18 -48 L21 -62 L30 -48 Z", fill: fur))
+        n.addChild(Shape.node(Shape.circle(25, -38, 13), fill: fur, stroke: Palette.ink))
+        n.addChild(Shape.node(Shape.circle(29, -41, 2.8), fill: Palette.ink))
+        n.addChild(Shape.node(Shape.circle(38, -35, 2.4), fill: Palette.ink))
+        n.addChild(Shape.node(Shape.ellipse(14, 0, 8, 3.5), fill: SKColor(hex: 0x8A4A22), stroke: Palette.ink, width: 2.5))
         return n
+    }
+
+    /// Kongle som spretter av kubben, sentrert i (0, 0).
+    static func pinecone() -> SKNode {
+        let n = SKNode()
+        n.addChild(Shape.node(Shape.ellipse(0, 0, 10, 14), fill: Palette.barkLight, stroke: Palette.ink, width: 3))
+        n.addChild(Shape.svg("M-6 -6 L6 -6 M-8 1 L8 1 M-6 8 L6 8", stroke: Palette.barkDeep, width: 2))
+        return n
+    }
+
+    /// Lite glimt-stjerne til feiringer, sentrert i (0, 0).
+    static func sparkle(color: SKColor) -> SKShapeNode {
+        Shape.svg("M0 -14 L4 -4 L14 0 L4 4 L0 14 L-4 4 L-14 0 L-4 -4 Z", fill: color, stroke: Palette.ink, width: 2)
     }
 }
