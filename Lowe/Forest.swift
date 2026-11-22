@@ -138,6 +138,7 @@ final class Forest: NSObject {
         controls.frame = view.bounds
         controls.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(controls)
+        print("[Lowe] skogen er koblet til skjermen, gjenkjennere på ARView: \(view.gestureRecognizers?.count ?? 0)")
         controls.onLook = { [weak self] dx, dy in self?.look(dx: Float(dx), dy: Float(dy)) }
         controls.onChop = { [weak self] in self?.chopPressed() }
         controls.onJump = { [weak self] in self?.jump() }
@@ -303,11 +304,10 @@ final class Forest: NSObject {
     /// Et kort trykk på høyre halvdel. Med byggingen på settes en kloss der fingeren peker,
     /// inntil siden av klossen den treffer, eller på bakken.
     private func tapped(at point: CGPoint) {
+        print("[Lowe] tapped(at:) \(point), byggemodus: \(buildMode)")
         guard buildMode else {
             let found = target(at: point)
-            #if DEBUG
             print("[Lowe] trykk \(point) traff: \(String(describing: found))")
-            #endif
             act(on: found)
             return
         }
@@ -385,9 +385,7 @@ final class Forest: NSObject {
         var groundPoint: SIMD3<Float>?
         var hitLowe = false
         let hits = view.hitTest(p, query: .all, mask: .all).sorted(by: { $0.distance < $1.distance })
-        #if DEBUG
         print("[Lowe] treff langs strålen: \(hits.map { String(describing: classify($0.entity)) })")
-        #endif
         for hit in hits {
             guard let found = classify(hit.entity) else { continue }
             switch found {
@@ -446,6 +444,7 @@ final class Forest: NSObject {
 
     /// Gjør det trykket ba om. Er tingen et stykke unna, går Lowe bort til den først.
     private func act(on target: Target?) {
+        print("[Lowe] act(on:) \(String(describing: target)), bærer: \(carrying.count)")
         switch target {
         case .log(let log)?:
             guard carrying.count < carryLimit else {
@@ -630,6 +629,7 @@ final class Forest: NSObject {
     private func goTo(_ point: SIMD3<Float>, stopShort: Float, then action: @escaping () -> Void) {
         var dir = SIMD2<Float>(position.x - point.x, position.z - point.z)
         let distance = simd_length(dir)
+        print("[Lowe] går mot \(point), \(distance) m unna")
         if distance <= stopShort + 0.15 {
             yawGoal = facing(point)
             action()
@@ -1145,6 +1145,7 @@ final class Forest: NSObject {
                 }
                 if let action = arriveAction {
                     arriveAction = nil
+                    print("[Lowe] framme, gjør det trykket ba om")
                     action()
                 }
             } else if arriveAction != nil && time > targetDeadline {
@@ -1153,8 +1154,10 @@ final class Forest: NSObject {
                 let action = arriveAction
                 arriveAction = nil
                 if flatDistance(position, arrivePoint) < 1.6 {
+                    print("[Lowe] tida gikk ut, men nesten framme, gjør det likevel")
                     action?()
                 } else {
+                    print("[Lowe] tida gikk ut, ga opp \(flatDistance(position, arrivePoint)) m unna")
                     sound.play(.whoosh, volume: 0.5)
                 }
             } else {
