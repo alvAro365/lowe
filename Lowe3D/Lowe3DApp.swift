@@ -5,7 +5,7 @@ import SwiftUI
 /// Egen app ved siden av 2D-spillet, så det er lett å sammenligne.
 @main
 struct Lowe3DApp: App {
-    var body: some Scene {
+    var body: some SwiftUI.Scene {
         WindowGroup {
             ForestView()
                 .ignoresSafeArea()
