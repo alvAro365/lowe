@@ -475,9 +475,12 @@ final class Forest: NSObject {
                 putDownTop()
             }
         case .ground(let g)?:
-            // Bærer Lowe noe, går han dit og legger den øverste stokken der. Ellers hugger han.
+            // Bærer Lowe noe, går han dit og legger den øverste stokken der.
+            // Står han på akebrettet, går han av. Ellers hugger han.
             if !carrying.isEmpty && flatDistance(g, position) < 9 {
                 goTo(g, stopShort: 0.55) { [weak self] in self?.putDown(at: g) }
+            } else if riding != nil {
+                stepOffSled()
             } else {
                 chopPressed()
             }
@@ -594,11 +597,16 @@ final class Forest: NSObject {
     }
 
     /// Lowe går av akebrettet, og brettet går tilbake i ryggsekken.
+    /// Lowe går av akebrettet. Brettet blir liggende i snøen ved siden av ham, klart til neste tur.
     private func stepOffSled() {
         guard let board = riding else { return }
         riding = nil
         board.removeFromParent()
-        backpack.add(.sled)
+        let side = SIMD3<Float>(cos(yaw), 0, -sin(yaw)) * 0.75
+        var spot = position + side
+        if builder.blocked(at: spot, footY: footY) { spot = position - side }
+        let ground = builder.groundHeight(at: spot, footY: footY + 0.1)
+        things.place(.sled, at: SIMD3(spot.x, ground, spot.z), yaw: yaw)
         sound.play(.pop)
         sound.buzz()
     }

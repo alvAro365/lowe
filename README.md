@@ -56,8 +56,9 @@ Spillet kjører i liggende format på både iPhone og iPad. Lyden følger lydlø
   - Nederst tingene han har laget. Trykk på en, så setter han den ned foran seg i skogen.
 - Lykta lyser varmt, mest om natta. På fuglekassa sitter en liten fugl som vipper og tar en runde nå og da.
   Trykk på lykta eller fuglekassa, så går den tilbake i sekken.
-- Trykk på akebrettet, så stiller Lowe seg på det og glir nesten dobbelt så fort. Trykk på Lowe for å gå av,
-  så går brettet tilbake i sekken. Det som er laget og satt ut, huskes.
+- Trykk på akebrettet, så stiller Lowe seg på det og glir nesten dobbelt så fort. Trykk på Lowe eller i snøen
+  for å gå av. Brettet blir liggende ved siden av ham, så han kan trykke på det og hoppe på igjen.
+  Det trengs ingen egen knapp. Det som er laget og satt ut, huskes.
 - **Dag og natt:** En hel dag og natt tar seks minutter. Etter omtrent tre og et halvt minutt kommer skumringen,
   og natta er blå med stjerner, måne og nordlys. Ved bålplassen i lysningen trykker man på bålplassen, så tenner Lowe bål.
   Bålet brenner natta gjennom og slukner når det blir lyst.
