@@ -5,7 +5,7 @@ import UIKit
 /// og store knapper hugger, hopper og slår på byggingen.
 /// Et kort trykk hvor som helst ellers på skjermen treffer tingen der: ta opp, legge fra seg, hugge. Når byggingen er på, setter et trykk en kloss der fingeren peker,
 /// og å holde fingeren på en kloss tar den bort, som i Minecraft. En rad nederst velger hvilken kloss.
-final class ControlsView: UIView {
+final class ControlsView: UIView, UIGestureRecognizerDelegate {
     /// Hvor spaken peker. x er mot høyre, y er framover. Lengden går fra 0 til 1.
     private(set) var move = SIMD2<Float>(0, 0)
     var onLook: ((CGFloat, CGFloat) -> Void)?
@@ -49,11 +49,26 @@ final class ControlsView: UIView {
     /// Klossene å velge mellom, nederst på midten når byggingen er på.
     private var hotbar: [UIView] = []
     private var selectedBlock = 0
+    /// Når et trykk sist ble sendt videre. To veier kan melde det samme trykket, så det andre blir ignorert.
+    private var lastTapFired: TimeInterval = 0
+    /// Ekstra vei for trykk: en vanlig trykkgjenkjenner som ikke stjeler fingrene fra resten av styringen.
+    /// Den fanger trykket selv om systemet avbryter berøringen i stedet for å avslutte den.
+    private lazy var tapRecognizer: UITapGestureRecognizer = {
+        let r = UITapGestureRecognizer(target: self, action: #selector(recognizedTap(_:)))
+        r.cancelsTouchesInView = false
+        r.delaysTouchesBegan = false
+        r.delaysTouchesEnded = false
+        r.delegate = self
+        return r
+    }()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .clear
         isMultipleTouchEnabled = true
+        isUserInteractionEnabled = true
+        addGestureRecognizer(tapRecognizer)
+        print("[Lowe] styringen er laget")
 
         stickBase.frame.size = CGSize(width: stickRadius * 2, height: stickRadius * 2)
         stickBase.layer.cornerRadius = stickRadius
@@ -381,6 +396,7 @@ final class ControlsView: UIView {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
             let p = touch.location(in: self)
+            print("[Lowe] finger ned \(p)")
             if let i = hotbar.firstIndex(where: { !$0.isHidden && $0.frame.insetBy(dx: -6, dy: -6).contains(p) }) {
                 selectBlock(i)
                 onPickBlock?(i)
@@ -404,7 +420,10 @@ final class ControlsView: UIView {
                 stickKnob.center = stickHome
                 stickBase.alpha = 1
                 stickKnob.alpha = 1
-            } else if lookTouch == nil {
+            } else {
+                // En ny finger tar alltid over kameradraget. En gammel finger som aldri ble sluppet
+                // (for eksempel fordi systemet tok den), skal ikke stenge for alle trykk etterpå.
+                stopHold()
                 lookTouch = touch
                 lookLast = p
                 lookTravel = 0
@@ -440,14 +459,17 @@ final class ControlsView: UIView {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        finish(touches, tapCounts: true)
+        print("[Lowe] finger opp (\(touches.count))")
+        finish(touches)
     }
 
+    /// Systemet kan avbryte en berøring i stedet for å avslutte den. Et kort, stille trykk teller likevel.
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        finish(touches, tapCounts: false)
+        print("[Lowe] finger avbrutt (\(touches.count))")
+        finish(touches)
     }
 
-    private func finish(_ touches: Set<UITouch>, tapCounts: Bool) {
+    private func finish(_ touches: Set<UITouch>) {
         for touch in touches {
             if touch === stickTouch {
                 stickTouch = nil
@@ -457,11 +479,66 @@ final class ControlsView: UIView {
                 lookTouch = nil
                 let fired = holdFired
                 stopHold()
-                if tapCounts && !fired && lookTravel < 14 && touch.timestamp - lookStartTime < 0.4 {
-                    onTap?(touch.location(in: self))
+                let time = touch.timestamp - lookStartTime
+                if fired {
+                    print("[Lowe] ikke trykk: fingeren holdt en kloss")
+                } else if lookTravel >= 24 {
+                    print("[Lowe] ikke trykk: fingeren dro \(Int(lookTravel)) punkter")
+                } else if time >= 0.8 {
+                    print("[Lowe] ikke trykk: fingeren lå i \(String(format: "%.2f", time)) s")
+                } else {
+                    fireTap(at: touch.location(in: self), from: "berøring")
                 }
+            } else {
+                print("[Lowe] finger opp som ikke var kamerafingeren")
             }
         }
+    }
+
+    @objc private func recognizedTap(_ recognizer: UITapGestureRecognizer) {
+        guard recognizer.state == .ended else { return }
+        fireTap(at: recognizer.location(in: self), from: "gjenkjenner")
+    }
+
+    /// Gjenkjenneren skal bare se fingre som ikke treffer knapper, spaken eller klossraden.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        !isOnControl(touch.location(in: self))
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+    private func isOnControl(_ p: CGPoint) -> Bool {
+        hotbar.contains(where: { !$0.isHidden && $0.frame.insetBy(dx: -6, dy: -6).contains(p) })
+            || hits(chopButton, p) || hits(jumpButton, p) || hits(buildButton, p) || hits(backpackButton, p)
+            || hypot(p.x - stickHome.x, p.y - stickHome.y) <= stickRadius * 1.5
+    }
+
+    /// Sender trykket videre én gang, og viser en liten ring der fingeren traff.
+    private func fireTap(at p: CGPoint, from source: String) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastTapFired > 0.3 else {
+            print("[Lowe] trykk fra \(source) var allerede sendt")
+            return
+        }
+        lastTapFired = now
+        print("[Lowe] TRYKK fra \(source) på \(p), sendes videre: \(onTap != nil)")
+        showRing(at: p)
+        onTap?(p)
+    }
+
+    private func showRing(at p: CGPoint) {
+        let ring = UIView(frame: CGRect(x: 0, y: 0, width: 36, height: 36))
+        ring.center = p
+        ring.layer.cornerRadius = 18
+        ring.layer.borderWidth = 3
+        ring.layer.borderColor = Colors.turquoise.cgColor
+        ring.isUserInteractionEnabled = false
+        addSubview(ring)
+        UIView.animate(withDuration: 0.35, animations: {
+            ring.transform = CGAffineTransform(scaleX: 1.8, y: 1.8)
+            ring.alpha = 0
+        }) { _ in ring.removeFromSuperview() }
     }
 
     /// Når byggingen er på og fingeren blir liggende stille, tas klossen under fingeren bort,
@@ -483,6 +560,7 @@ final class ControlsView: UIView {
         guard since > 0.4 else { return }
         holdLastFire = now
         holdFired = true
+        lastTapFired = ProcessInfo.processInfo.systemUptime + 0.5
         onHold?(lookLast)
     }
 
